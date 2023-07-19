@@ -5,7 +5,8 @@ import numpy as np
 from tqdm import tqdm
 from multiprocessing import Lock, RLock, Queue, Process, Value
 import time
-from datetime import timedelta
+from circular_dict import CircularDict
+import pickle, os
 
 from Arena import Arena
 from MCTS import batch_MCTS
@@ -14,9 +15,10 @@ log = logging.getLogger(__name__)
 
 def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
     num_workers = args.mcts_per_sampler
-    shared_Ps = {}
-    shared_Es = {}
-    shared_Vs = {}
+    mem_limit_bytes = int(args.available_mem_gb * 0.95 / args.sampler_num / 3 * 1024 * 1024 * 1024)
+    shared_Ps = CircularDict(maxsize_bytes=mem_limit_bytes)
+    shared_Es = CircularDict(maxsize_bytes=mem_limit_bytes)
+    shared_Vs = CircularDict(maxsize_bytes=mem_limit_bytes)
     query_buffer = []
     worker_pool = {i: batch_MCTS(game,args,shared_Ps,shared_Es,shared_Vs,query_buffer,i) for i in range(num_workers)}
     trainExamples = []
@@ -48,7 +50,11 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
             for j,s in enumerate(query_state_string):
                 # Set Ps and Vs
                 shared_Ps[s] = pi[j]
-                valids = game.getValidMoves(query_content[j], 1)
+                if s not in shared_Vs:
+                    valids = game.getValidMoves(query_content[j], 1)
+                    shared_Vs[s] = valids
+                else:
+                    valids = shared_Vs[s]
                 shared_Ps[s] = shared_Ps[s] * valids
                 sum_Ps_s = np.sum(shared_Ps[s])
                 if sum_Ps_s > 0:
@@ -57,7 +63,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
                     log.error("All valid moves were masked, doing a workaround.")
                     shared_Ps[s] = shared_Ps[s] + valids
                     shared_Ps[s] /= np.sum(shared_Ps[s])
-                shared_Vs[s] = valids
+                
                 # Set values
                 worker_pool[query_index[j]].current_value = -v[j]
 
@@ -106,10 +112,10 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
         if v_model.value > model_version:
             model_version = v_model.value
             log.debug(f"Sampler: reset mcts buffer for model {model_version}")
-            # Reset all mcts. Todo: update Ps with new model?
+            # Reset all mcts? Todo: update Ps with new model?
             shared_Ps.clear() 
-            for i in range(num_workers):
-                worker_pool[i].reset()
+            # for i in range(num_workers):
+            #     worker_pool[i].reset()
 
         # Update state
         gpu_ratio = gpu_time/(time.time()-start_time)
@@ -154,7 +160,7 @@ def Trainer(q_data, v_model, gpu_id, game, nn, args, lock):
     '''
     episode_size = 100000
 
-    t_status = tqdm(total=1, desc='Status', position=0, lock_args=(True, args.tqdm_wait_time))
+    t_status = tqdm(total=args.numIters, desc='Status', position=0, lock_args=(True, args.tqdm_wait_time))
     t_status.set_lock(lock)
     t_train = tqdm(total=1, desc='Training', position=1, lock_args=(True, args.tqdm_wait_time))
     t_train.set_lock(lock)
@@ -171,6 +177,9 @@ def Trainer(q_data, v_model, gpu_id, game, nn, args, lock):
 
     if args.load_model:
         nnet.load_checkpoint(args.load_folder_file[0], args.load_folder_file[1])
+        if len(args.load_folder_file) > 2:
+            with open(os.path.join(args.load_folder_file[0], args.load_folder_file[2]), 'rb') as f:
+                episodeHistory = pickle.load(f)
     
     while 1:
         if q_data.qsize()>0:
@@ -196,10 +205,14 @@ def Trainer(q_data, v_model, gpu_id, game, nn, args, lock):
             nnet.train(trainExamples)
             last_train_time = time.time()
             _model_name = 'checkpoint_' + str(int(last_train_time)) + '.pth.tar'
+            _data_name = 'checkpoint_' + str(int(last_train_time)) + '.data.pth.tar'
             nnet.save_checkpoint(folder=args.checkpoint, filename=_model_name)
+            with open('data.pickle', 'wb') as f:
+                pickle.dump(episodeHistory, f, os.path.join(args.checkpoint, _data_name))
             v_model.value = int(last_train_time)
             log.debug(f"Trainer: push model {v_model.value}")
             train_iter_counter += 1
+            t_status.update(1)
 
         t_status.set_postfix(iter=train_iter_counter, model=str(int(last_train_time)), datasize=sum([len(x) for x in episodeHistory]))
         time.sleep(0.1)

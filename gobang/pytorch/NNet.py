@@ -49,14 +49,13 @@ class NNetWrapper(NeuralNet):
         """
         optimizer = optim.Adam(self.nnet.parameters())
 
+        batch_count = int(len(examples) / args.batch_size)
+        self.t_bar.reset(total=batch_count*args.epochs)
         for epoch in range(args.epochs):
             # print('EPOCH ::: ' + str(epoch + 1))
             self.nnet.train()
             pi_losses = AverageMeter()
             v_losses = AverageMeter()
-
-            batch_count = int(len(examples) / args.batch_size)
-            self.t_bar.reset(total=batch_count)
             for _ in range(batch_count):
                 sample_ids = np.random.randint(len(examples), size=args.batch_size)
                 boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
@@ -112,7 +111,7 @@ class NNetWrapper(NeuralNet):
     def save_checkpoint(self, folder='checkpoint', filename='checkpoint.pth.tar'):
         filepath = os.path.join(folder, filename)
         if not os.path.exists(folder):
-            print("Checkpoint Directory does not exist! Making directory {}".format(folder))
+            # print("Checkpoint Directory does not exist! Making directory {}".format(folder))
             os.mkdir(folder)
         else:
             # print("Checkpoint Directory exists! ")

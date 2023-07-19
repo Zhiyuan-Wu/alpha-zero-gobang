@@ -16,26 +16,26 @@ log = logging.getLogger(__name__)
 coloredlogs.install(level='INFO')  # Change this to DEBUG to see more info.
 
 args = dotdict({
-    'numIters': 1000,
+    'numIters': 100,
     'numEps': 100,              # Number of complete self-play games to simulate during a new iteration.
     'tempThreshold': 15,        #
-    'updateThreshold': 0.55,     # During arena playoff, new neural net will be accepted if threshold or more of games are won.
+    'updateThreshold': 0.55,    # During arena playoff, new neural net will be accepted if threshold or more of games are won.
     'maxlenOfQueue': 200000,    # Number of game examples to train the neural networks.
-    'numMCTSSims': 1000,          # Number of games moves for MCTS to simulate.
+    'numMCTSSims': 1000,        # Number of games moves for MCTS to simulate.
     'arenaCompare': 40,         # Number of games to play during arena play to determine if new net will be accepted.
-    'cpuct': 1,
-    'endGameRewardWeight': 1,
+    'cpuct': 1,                 # Higher value lead to more exploration
+    'endGameRewardWeight': 1,   # Amplify the real endgame reward over network estimation
 
-    'sampler_num': 32,
-    'mcts_per_sampler': 32,
-    'gpu_num': 4,
+    'sampler_num': 32,          # The number of parallel sampling process.
+    'mcts_per_sampler': 16,     # The number of mcts inside each sampling process, higher value lead to larger query batch, but not overall faster sampling
+    'gpu_num': 4,               # The number of avaliable gpu, gpu:0 will be used to train model, others will be used to inference
+    'available_mem_gb': 200,
+    'tqdm_wait_time': 0.1,      # timeout parameter for global lock. tqdm randomly deadlock without this.
 
     'checkpoint': './result0719/',
-    'load_model': False,
-    'load_folder_file': ('./result0717/','checkpoint_1689679767.pth.tar'),
+    'load_model': True,
+    'load_folder_file': ('./result0719/','checkpoint_1689767719.pth.tar'),
     'numItersForTrainExamplesHistory': 30,
-    'tqdm_wait_time': 0.1,  # timeout parameter for global lock. tqdm randomly deadlock without this.
-
 })
 
 
