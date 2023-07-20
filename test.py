@@ -10,6 +10,7 @@ from utils import *
 import multiprocessing as mp
 if __name__ =="__main__":
     mp.set_start_method('spawn')
+from circular_dict import CircularDict
 
 log = logging.getLogger(__name__)
 
@@ -27,39 +28,35 @@ args = dotdict({
     'endGameRewardWeight': 1,   # Amplify the real endgame reward over network estimation
 
     'sampler_num': 32,          # The number of parallel sampling process.
-    'mcts_per_sampler': 32,     # The number of mcts inside each sampling process, higher value lead to larger query batch, but not overall faster sampling
-    'gpu_num': 7,               # The number of avaliable gpu, gpu:0 will be used to train model, others will be used to inference
-    'available_mem_gb': 180,
+    'mcts_per_sampler': 16,     # The number of mcts inside each sampling process, higher value lead to larger query batch, but not overall faster sampling
+    'gpu_num': 4,               # The number of avaliable gpu, gpu:0 will be used to train model, others will be used to inference
+    'available_mem_gb': 200,
     'tqdm_wait_time': 0.1,      # timeout parameter for global lock. tqdm randomly deadlock without this.
 
     'checkpoint': './result0719/',
     'load_model': True,
-    'load_folder_file': ('./result0719/','checkpoint_1689790441.pth.tar','checkpoint_1689790441.data.pth.tar'),
+    'load_folder_file': ('./result0719/','checkpoint_1689767719.pth.tar'),
     'numItersForTrainExamplesHistory': 30,
 })
 
+from MCTS import batch_MCTS
+
+game = Game(15)
+shared_Ps = {}
+shared_Es = {}
+shared_Vs = {}
+# shared_Ps = CircularDict(maxlen=10000)
+# shared_Es = CircularDict(maxlen=10000)
+# shared_Vs = CircularDict(maxlen=10000)
+query_buffer = []
+t = batch_MCTS(game,args,shared_Ps,shared_Es,shared_Vs,query_buffer,0)
 
 def main():
-    log.info('Loading %s...', Game.__name__)
-    g = Game(15)
+    for _ in range(200000):
+        t.extend()
+        t._set_result()
+        t.backprop()
 
-    # if args.load_model:
-    #     log.info('Loading checkpoint "%s/%s"...', args.load_folder_file[0], args.load_folder_file[1])
-    #     nnet.load_checkpoint(args.load_folder_file[0], args.load_folder_file[1])
-    # else:
-    #     log.warning('Not loading a checkpoint!')
-
-    log.info('Loading the Coach...')
-    # c = Coach(game=g, nnet=nn(g), args=args)
-    c = mpCoach(game=g, nnet=nn, args=args)
-
-    # if args.load_model:
-    #     log.info("Loading 'trainExamples' from file...")
-    #     c.loadTrainExamples()
-
-    log.info('Starting the learning process 🎉')
-    c.learn()
-
-
-if __name__ == "__main__":
-    main()
+import cProfile
+# cProfile.run('main()')
+main()

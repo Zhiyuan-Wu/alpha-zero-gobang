@@ -17,8 +17,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-class dotdict(dict):
-    def __getattr__(self, name):
-        if name=="__getstate__":
-            return super(dotdict, self).__getstate__
-        return self[name]
+class dotdict():
+    def __init__(self, kwards):
+        for k,v  in kwards.items():
+            self.__setattr__(k, v)

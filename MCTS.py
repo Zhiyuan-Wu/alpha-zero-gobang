@@ -3,6 +3,7 @@ import math
 
 import numpy as np
 import time
+from utils import *
 
 EPS = 1e-8
 
@@ -168,6 +169,8 @@ class batch_MCTS():
         self.search_count = 0
         self.total_search_depth = 0
 
+        self.ZERO_ACTION_VECTOR = np.zeros((self.game.getActionSize()))
+
     def reset(self):
         ''' Reset the tree state, ready for new search (under same policy). Note that this will not reset the shared content (Ps, Es, Vs).
         '''
@@ -182,7 +185,20 @@ class batch_MCTS():
         self.search_path = []
         self.current_state = self.game.getCanonicalForm(self.board, self.player)
         self.current_value = None
+    
+    def cpuct(self, s):
+        valids = self.Vs[s]
+        if s in self.Qsa:
+            qsa = self.Qsa[s]
+            nsa = self.Nsa[s]
+        else:
+            qsa = np.zeros((self.game.getActionSize()))
+            nsa = np.zeros((self.game.getActionSize()))
 
+        u = qsa + self.args.cpuct * self.Ps[s] * (np.sqrt(self.Ns[s]) + EPS) / (1+nsa)
+        a = np.argmax((u + 999999)*valids)
+        return a
+    
     def extend(self):
         ''' excute a forward search, stop at a leaf node (non-evaluated node or terminal-node).
         '''
@@ -205,45 +221,60 @@ class batch_MCTS():
 
             if s not in self.Ns:
                 self.Ns[s] = 0
-            
-            valids = self.Vs[s]
-            cur_best = -float('inf')
-            best_act = -1
 
             # pick the action with the highest upper confidence bound
-            for a in range(self.game.getActionSize()):
-                if valids[a]:
-                    if (s, a) in self.Qsa:
-                        u = self.Qsa[(s, a)] + self.args.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s]) / (1 + self.Nsa[(s, a)])
-                    else:
-                        u = self.args.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s] + EPS)  # Q = 0 ?
+            best_act = self.cpuct(s)
 
-                    if u > cur_best:
-                        cur_best = u
-                        best_act = a
-
-            a = best_act
-            next_s, next_player = self.game.getNextState(self.current_state, 1, a)
+            next_s, next_player = self.game.getNextState(self.current_state, 1, best_act)
             self.current_state = self.game.getCanonicalForm(next_s, next_player)
 
-            self.search_path.append((s, a))
+            self.search_path.append((s, best_act))
 
+    def _set_result(self):
+        ''' provides a fake function that set all queries from extend(). only for debug purpose.
+        '''
+        if len(self.qb)>0:
+            query_index, query_content, query_state_string = zip(*self.qb)
+            pi = np.ones((self.game.getActionSize()))
+            v = 0.001
+            for j,s in enumerate(query_state_string):
+                # Set Ps and Vs
+                self.Ps[s] = pi
+                if s not in self.Vs:
+                    valids = self.game.getValidMoves(query_content[j], 1)
+                    self.Vs[s] = valids
+                else:
+                    valids = self.Vs[s]
+                self.Ps[s] = self.Ps[s] * valids
+                sum_Ps_s = np.sum(self.Ps[s])
+                if sum_Ps_s > 0:
+                    self.Ps[s] /= sum_Ps_s  # renormalize
+                else:  
+                    log.error("All valid moves were masked, doing a workaround.")
+                    self.Ps[s] = self.Ps[s] + valids
+                    self.Ps[s] /= np.sum(self.Ps[s])
+                
+                # Set values
+                self.current_value = -v
+            self.qb.clear()
+    
     def backprop(self):
         ''' after self.current_value be set (either by extend() for terminal-node, or outside controller for non-evaluated node), update tree statics
         '''
         self.search_count += 1
         self.total_search_depth += len(self.search_path)
         for s,a in self.search_path:
-            if (s, a) in self.Qsa:
-                self.Qsa[(s, a)] = (self.Nsa[(s, a)] * self.Qsa[(s, a)] + self.current_value) / (self.Nsa[(s, a)] + 1)
-                self.Nsa[(s, a)] += 1
-
+            if s in self.Qsa:
+                _qsa = self.Qsa[s][a]
+                _nsa = self.Nsa[s][a]
+                self.Qsa[s][a] = (_nsa * _qsa + self.current_value) / (_nsa + 1)
+                self.Nsa[s][a] = _nsa + 1
             else:
-                self.Qsa[(s, a)] = self.current_value
-                self.Nsa[(s, a)] = 1
+                self.Qsa[s] = np.zeros((self.game.getActionSize(),))
+                self.Qsa[s][a] = self.current_value
+                self.Nsa[s] = np.zeros((self.game.getActionSize(),))
+                self.Nsa[s][a] = 1
 
             self.Ns[s] += 1
             self.current_value = -self.current_value
         self.search_path.clear()
-
-    

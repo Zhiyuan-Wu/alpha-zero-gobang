@@ -1,5 +1,6 @@
 *.pyc
 .DS_Store
+.vscode
 
 /temp/
 /.project
@@ -12,3 +13,5 @@ checkpoints/
 .idea/
 
 *.pth.tar
+*.so
+*.o

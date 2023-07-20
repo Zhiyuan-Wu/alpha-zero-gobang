@@ -77,7 +77,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
             canonicalBoard = game.getCanonicalForm(mcts.board, mcts.player)
             temp = int(mcts.episodeStep < args.tempThreshold)
             s = game.stringRepresentation(canonicalBoard)
-            counts = [mcts.Nsa[(s, a)] if (s, a) in mcts.Nsa else 0 for a in range(game.getActionSize())]
+            counts = [mcts.Nsa[s][a] if s in mcts.Nsa else 0 for a in range(game.getActionSize())]
 
             if temp == 0:
                 bestAs = np.array(np.argwhere(counts == np.max(counts))).flatten()
@@ -207,8 +207,8 @@ def Trainer(q_data, v_model, gpu_id, game, nn, args, lock):
             _model_name = 'checkpoint_' + str(int(last_train_time)) + '.pth.tar'
             _data_name = 'checkpoint_' + str(int(last_train_time)) + '.data.pth.tar'
             nnet.save_checkpoint(folder=args.checkpoint, filename=_model_name)
-            with open('data.pickle', 'wb') as f:
-                pickle.dump(episodeHistory, f, os.path.join(args.checkpoint, _data_name))
+            with open(os.path.join(args.checkpoint, _data_name), 'wb') as f:
+                pickle.dump(episodeHistory, f)
             v_model.value = int(last_train_time)
             log.debug(f"Trainer: push model {v_model.value}")
             train_iter_counter += 1
