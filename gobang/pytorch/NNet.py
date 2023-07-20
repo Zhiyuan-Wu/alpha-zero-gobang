@@ -18,7 +18,7 @@ args = dotdict({
     'lr': 0.001,
     'dropout': 0.3,
     'epochs': 10,
-    'batch_size': 128,
+    'batch_size': 256,
     'cuda': torch.cuda.is_available(),
     'num_channels': 512,
 })
@@ -38,10 +38,6 @@ class NNetWrapper(NeuralNet):
             self.gpu_nums = torch.cuda.device_count()
             self.gpu_id = gpu_id
             self.nnet.cuda(self.gpu_id)
-    
-    def relocate(self, gpu_id):
-        self.gpu_id = gpu_id
-        self.nnet.cuda(self.gpu_id)
 
     def train(self, examples):
         """
@@ -125,6 +121,6 @@ class NNetWrapper(NeuralNet):
         filepath = os.path.join(folder, filename)
         if not os.path.exists(filepath):
             raise ("No model in path {}".format(filepath))
-        map_location = None if args.cuda else 'cpu'
+        map_location = 'cuda:'+str(self.gpu_id) if args.cuda else 'cpu'
         checkpoint = torch.load(filepath, map_location=map_location)
         self.nnet.load_state_dict(checkpoint['state_dict'])

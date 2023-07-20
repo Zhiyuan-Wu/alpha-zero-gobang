@@ -15,10 +15,10 @@ log = logging.getLogger(__name__)
 
 def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
     num_workers = args.mcts_per_sampler
-    mem_limit_bytes = int(args.available_mem_gb * 0.95 / args.sampler_num / 3 * 1024 * 1024 * 1024)
-    shared_Ps = CircularDict(maxsize_bytes=mem_limit_bytes)
-    shared_Es = CircularDict(maxsize_bytes=mem_limit_bytes)
-    shared_Vs = CircularDict(maxsize_bytes=mem_limit_bytes)
+    mem_limit_bytes = int(args.available_mem_gb * 0.7 / args.sampler_num / 3 * 1024 * 1024 * 1024)
+    shared_Ps = CircularDict(maxsize_bytes=int(mem_limit_bytes*2))
+    shared_Es = CircularDict(maxsize_bytes=int(mem_limit_bytes*0.5))
+    shared_Vs = CircularDict(maxsize_bytes=int(mem_limit_bytes*0.5))
     query_buffer = []
     worker_pool = {i: batch_MCTS(game,args,shared_Ps,shared_Es,shared_Vs,query_buffer,i) for i in range(num_workers)}
     trainExamples = []
@@ -228,7 +228,7 @@ class mpCoach():
         q_data = Queue()
         v_model = Value('i', -1)
         sampler_num = self.args.sampler_num
-        evaluator_num = self.args.gpu_num - 1
+        evaluator_num = len(self.args.gpu_evaluator)
         sampler_pool = {}
 
         for i in range(sampler_num):
@@ -240,9 +240,9 @@ class mpCoach():
         
         for i in range(evaluator_num):
             sampler_pool_subset = {k: sampler_pool[k] for j,k in enumerate(sampler_pool) if j%evaluator_num==i}
-            evaluator = Process(target=Evaluator, args=(sampler_pool_subset, v_model, 1+i, self.game, self.nn, self.args, self.global_lock))
+            evaluator = Process(target=Evaluator, args=(sampler_pool_subset, v_model, self.args.gpu_evaluator[i], self.game, self.nn, self.args, self.global_lock))
             evaluator.start()
         
-        trainer = Process(target=Trainer, args=(q_data, v_model, 0, self.game, self.nn, self.args, self.global_lock))
+        trainer = Process(target=Trainer, args=(q_data, v_model, self.args.gpu_trainner, self.game, self.nn, self.args, self.global_lock))
         trainer.start()
         trainer.join()

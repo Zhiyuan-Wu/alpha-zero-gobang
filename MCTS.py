@@ -223,6 +223,8 @@ class batch_MCTS():
                 self.Ns[s] = 0
 
             # pick the action with the highest upper confidence bound
+            if s not in self.Vs:
+                self.Vs[s] = self.game.getValidMoves(self.current_state, 1)
             best_act = self.cpuct(s)
 
             next_s, next_player = self.game.getNextState(self.current_state, 1, best_act)
