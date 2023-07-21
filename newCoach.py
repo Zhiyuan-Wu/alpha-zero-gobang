@@ -10,7 +10,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from gobang.pytorch.GobangNNet import GobangNNet as onnet
 from gobang.pytorch.GobangNNet import loss_pi, loss_v
-import time
+import time, datetime
 from circular_dict import CircularDict
 import os
 from utils import *
@@ -29,7 +29,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
     query_buffer = []
     worker_pool = {i: batch_MCTS(game,args,shared_Ps,shared_Es,shared_Vs,query_buffer,i) for i in range(num_workers)}
     trainExamples = []
-    model_version = 0
+    model_version = v_model.value
     game_counter = 0
     game_counter_old = 0
     start_time = time.time()
@@ -166,7 +166,7 @@ def Evaluator(sampler_pool, v_model, gpu_id, game,args):
                 ans = (torch.exp(pi).data.cpu().numpy().squeeze(), v.data.cpu().numpy().squeeze())
                 q_ans.put(ans)
 
-def mpLearner(rank, world_size, v_model, examples, game, args, lock):
+def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = str(args.port)
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -186,53 +186,81 @@ def mpLearner(rank, world_size, v_model, examples, game, args, lock):
     optimizer = optim.Adam(ddp_model.parameters(), lr=0.001)
     ddp_model.train()
 
-    batch_count = int(len(examples) / args.batch_size)
-    if rank==0:
-        t_train.reset(total=batch_count*args.epochs)
-    for epoch in range(args.epochs):
-        pi_losses = AverageMeter()
-        v_losses = AverageMeter()
-        for _ in range(batch_count):
-            sample_ids = np.random.randint(len(examples), size=args.batch_size)
-            boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
-            boards = torch.FloatTensor(np.array(boards).astype(np.float64))
-            target_pis = torch.FloatTensor(np.array(pis))
-            target_vs = torch.FloatTensor(np.array(vs).astype(np.float64))
-
-            # predict
-            if args.cuda:
-                boards, target_pis, target_vs = boards.contiguous().cuda(rank), target_pis.contiguous().cuda(rank), target_vs.contiguous().cuda(rank)
-
-            # compute output
-            out_pi, out_v = ddp_model(boards)
-            l_pi = loss_pi(target_pis, out_pi)
-            l_v = loss_v(target_vs, out_v)
-            total_loss = l_pi + l_v
-
-            # record loss
-            pi_losses.update(l_pi.item(), boards.size(0))
-            v_losses.update(l_v.item(), boards.size(0))
-            if rank==0:
-                t_train.set_postfix(Loss_pi=pi_losses, Loss_v=v_losses)
-
-            # compute gradient and do SGD step
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
-            if rank==0:
-                t_train.update(1)
+    episodeHistory = []
+    data_update_time = time.time()
+    last_train_time = data_update_time + 1
+    train_iter_counter = 1
+    start_time = time.time()
     
-    dist.barrier()
-    if rank==0:
-        new_model_version = int(time.time())
-        _path = os.path.join(args.checkpoint, f"checkpoint_{new_model_version}.pth")
-        torch.save(ddp_model.state_dict(), _path)
-        v_model.value = new_model_version
-    
-    dist.barrier()
-    dist.destroy_process_group()
+    while 1:
+        # Check data 
+        if q_distributor.qsize()>0:
+            _buffer = []
+            for _ in range(q_distributor.qsize()):
+                _buffer += q_distributor.get()
+            episodeHistory.append(_buffer)
+            if len(episodeHistory) > args.numItersForTrainExamplesHistory:
+                episodeHistory.pop(0)
+            data_update_time = time.time()
+        
+        # Train model when new data arrive
+        if last_train_time < data_update_time:
+            examples = []
+            for e in episodeHistory:
+                examples.extend(e)
+            shuffle(examples)
 
-def Trainer(q_data, v_model, game, args, lock):
+            dist.barrier()
+            batch_count = int(len(examples) / args.batch_size)
+            if rank==0:
+                t_train.reset(total=batch_count*args.epochs)
+            for epoch in range(args.epochs):
+                pi_losses = AverageMeter()
+                v_losses = AverageMeter()
+                for _ in range(batch_count): # do we need make batch_count consistent between trainers? or set a constant value
+                    sample_ids = np.random.randint(len(examples), size=args.batch_size)
+                    boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
+                    boards = torch.FloatTensor(np.array(boards).astype(np.float64))
+                    target_pis = torch.FloatTensor(np.array(pis))
+                    target_vs = torch.FloatTensor(np.array(vs).astype(np.float64))
+
+                    # predict
+                    if args.cuda:
+                        boards, target_pis, target_vs = boards.contiguous().cuda(rank), target_pis.contiguous().cuda(rank), target_vs.contiguous().cuda(rank)
+
+                    # compute output
+                    out_pi, out_v = ddp_model(boards)
+                    l_pi = loss_pi(target_pis, out_pi)
+                    l_v = loss_v(target_vs, out_v)
+                    total_loss = l_pi + l_v
+
+                    # record loss
+                    pi_losses.update(l_pi.item(), boards.size(0))
+                    v_losses.update(l_v.item(), boards.size(0))
+                    if rank==0:
+                        t_train.set_postfix(Loss_pi=pi_losses, Loss_v=v_losses)
+
+                    # compute gradient and do SGD step
+                    optimizer.zero_grad()
+                    total_loss.backward()
+                    optimizer.step()
+                    if rank==0:
+                        t_train.update(1)
+            
+            if rank==0:
+                new_model_version = int(time.time())
+                _path = os.path.join(args.checkpoint, f"checkpoint_{new_model_version}.pth")
+                torch.save(ddp_model.state_dict(), _path)
+                v_model.value = new_model_version
+            
+            last_train_time = time.time()
+            train_iter_counter += 1
+
+        if rank==0:
+            t_train.set_postfix(time=datetime.timedelta(seconds=int(time.time()-start_time)))
+        time.sleep(0.1)
+
+def Controller(q_data, trainer_pool, v_model, game, args, lock):
     ''' This function is the Trainer process, that:
             - collect data from sampler
             - train new models and push latest one to evaluator
@@ -242,45 +270,35 @@ def Trainer(q_data, v_model, game, args, lock):
     t_sample = tqdm(total=args.episode_size, desc="Sampling", position=1, lock_args=(True, args.tqdm_wait_time))
     t_sample.set_lock(lock)
 
-    episodeHistory = []
     sample_buffer = []
-    data_update_time = time.time()
-    last_train_time = data_update_time + 1
-    train_iter_counter = 1
+    data_counter = 0
+    old_model = v_model.value
+    iteration_counter = 0
     
     while 1:
+        # Collect data from samplers
         if q_data.qsize()>0:
             for _ in range(q_data.qsize()):
                 data = q_data.get()
                 sample_buffer += data
                 log.debug(f"Trainer: recieved from sampler. data size {len(data)}, buffer size{len(sample_buffer)}")
                 t_sample.update(len(data))
+
+                # Distribute data to trainers
                 if len(sample_buffer) > args.episode_size:
-                    episodeHistory.append(sample_buffer)
-                    data_update_time = time.time()
+                    data_counter += len(sample_buffer)
+                    shuffle(sample_buffer)
+                    split_size = len(sample_buffer) // len(args.gpu_trainner)
+                    for i in range(len(args.gpu_trainner)):
+                        trainer_pool[i].put(sample_buffer[split_size*i:split_size*(i+1)])
                     sample_buffer = []
                     t_sample.reset()
-                if len(episodeHistory) > args.numItersForTrainExamplesHistory:
-                    log.debug(f"Trainer: Removing the oldest entry in trainExamples. len(trainExamplesHistory) = {len(episodeHistory)}")
-                    episodeHistory.pop(0)
 
-        if last_train_time < data_update_time:
-            trainExamples = []
-            for e in episodeHistory:
-                trainExamples.extend(e)
-            shuffle(trainExamples)
-            _learner_pool = []
-            split_size = len(trainExamples) // len(args.gpu_trainner)
-            for i in range(len(args.gpu_trainner)):
-                _l = Process(target=mpLearner, args=(args.gpu_trainner[i], len(args.gpu_trainner), v_model, trainExamples[split_size*i:split_size*(i+1)], game, args, lock))
-                _l.start()
-                _learner_pool.append(_l)
-            for i in range(len(args.gpu_trainner)):
-                _learner_pool[i].join()
-            train_iter_counter += 1
-            t_status.update(1)
+        if v_model.value > old_model:
+            old_model = v_model.value
+            iteration_counter += 1
 
-        t_status.set_postfix(iter=train_iter_counter, model=str(v_model.value), datasize=sum([len(x) for x in episodeHistory]))
+        t_status.set_postfix(iter=iteration_counter, model=str(v_model.value), datasize=data_counter)
         time.sleep(0.1)
 
 class mpCoach():
@@ -290,19 +308,21 @@ class mpCoach():
         self.global_lock = RLock()
 
     def learn(self):
-        q_data = Queue()
         if self.args.load_model:
             v_model = Value('i', self.args.model_series_number)
         else:
             v_model = Value('i', -1)
         sampler_num = self.args.sampler_num
         evaluator_num = len(self.args.gpu_evaluator)
+        trainer_num = len(self.args.gpu_trainner)
         sampler_pool = {}
+        trainer_pool = {}
 
+        q_collector = Queue()
         for i in range(sampler_num):
             q_job = Queue()
             q_ans = Queue()
-            sampler = Process(target=Sampler, args=(i, q_job, q_ans, q_data, v_model, self.game, self.args, self.global_lock))
+            sampler = Process(target=Sampler, args=(i, q_job, q_ans, q_collector, v_model, self.game, self.args, self.global_lock))
             sampler.start()
             sampler_pool[i] = [q_job, q_ans]
         
@@ -310,7 +330,13 @@ class mpCoach():
             sampler_pool_subset = {k: sampler_pool[k] for j,k in enumerate(sampler_pool) if j%evaluator_num==i}
             evaluator = Process(target=Evaluator, args=(sampler_pool_subset, v_model, self.args.gpu_evaluator[i], self.game, self.args))
             evaluator.start()
+
+        for i in range(trainer_num):
+            q_distributor = Queue()
+            trainer = Process(target=mpTrainer, args=(self.args.gpu_trainner[i], len(self.args.gpu_trainner), v_model, q_distributor, self.game, self.args, self.global_lock))
+            trainer.start()
+            trainer_pool[i] = q_distributor
         
-        trainer = Process(target=Trainer, args=(q_data, v_model, self.game, self.args, self.global_lock))
-        trainer.start()
-        trainer.join()
+        controller = Process(target=Controller, args=(q_collector, trainer_pool, v_model, self.game, self.args, self.global_lock))
+        controller.start()
+        controller.join()

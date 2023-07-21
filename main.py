@@ -36,7 +36,7 @@ args = dotdict({
 
     'checkpoint': './result0719/',           # checkpoint saving directory
     'load_model': True,                      # load a check point to start
-    'model_series_number': 10721,            # the load model series number
+    'model_series_number': 1689939786,       # the load model series number
     'numItersForTrainExamplesHistory': 30,   # the maximum iterations that sample buffer keeps
 
     'lr': 0.001,
