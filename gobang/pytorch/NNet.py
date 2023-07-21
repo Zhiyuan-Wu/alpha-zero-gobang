@@ -7,7 +7,6 @@ from tqdm import tqdm
 
 sys.path.append('../../')
 from utils import *
-from NeuralNet import NeuralNet
 
 import torch
 import torch.optim as optim
@@ -24,7 +23,7 @@ args = dotdict({
 })
 
 
-class NNetWrapper(NeuralNet):
+class NNetWrapper():
     def __init__(self, game, gpu_id=0, _tqdm=None):
         self.nnet = onnet(game, args)
         self.board_x, self.board_y = game.getBoardSize()

@@ -13,5 +13,6 @@ checkpoints/
 .idea/
 
 *.pth.tar
+*.pth
 *.so
 *.o

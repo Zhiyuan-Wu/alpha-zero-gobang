@@ -52,3 +52,13 @@ class GobangNNet(nn.Module):
         v = self.fc4(s)                                                                          # batch_size x 1
 
         return F.log_softmax(pi, dim=1), torch.tanh(v)
+
+def loss_pi(targets, outputs):
+    ''' This function compute policy loss.
+    '''
+    return -torch.sum(targets * outputs) / targets.size()[0]
+
+def loss_v(targets, outputs):
+    ''' This function compute reward loss.
+    '''
+    return torch.sum((targets - outputs.view(-1)) ** 2) / targets.size()[0]

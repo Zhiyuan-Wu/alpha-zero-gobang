@@ -5,62 +5,58 @@ import coloredlogs
 from Coach import Coach
 from newCoach import mpCoach
 from gobang.GobangGame import GobangGame as Game
-from gobang.pytorch.NNet import NNetWrapper as nn
 from utils import *
-import multiprocessing as mp
+import torch
+import torch.multiprocessing as mp
 if __name__ =="__main__":
     mp.set_start_method('spawn')
 
 log = logging.getLogger(__name__)
 
-coloredlogs.install(level='INFO')  # Change this to DEBUG to see more info.
+coloredlogs.install(level='ERROR')  # Change this to DEBUG to see more info.
 
 args = dotdict({
+    'game_size': 15,                         # Board size
     'numIters': 100,
-    'numEps': 100,                   # Number of complete self-play games to simulate during a new iteration.
-    'tempThreshold': 15,             #
-    'updateThreshold': 0.55,         # During arena playoff, new neural net will be accepted if threshold or more of games are won.
-    'maxlenOfQueue': 200000,         # Number of game examples to train the neural networks.
-    'numMCTSSims': 1000,             # Number of games moves for MCTS to simulate.
-    'arenaCompare': 40,              # Number of games to play during arena play to determine if new net will be accepted.
-    'cpuct': 1,                      # Higher value lead to more exploration
-    'endGameRewardWeight': 1,        # Amplify the real endgame reward over network estimation
-     
-    'sampler_num': 18,               # The number of parallel sampling process.
-    'mcts_per_sampler': 64,          # The number of mcts inside each sampling process, higher value lead to larger query batch
-    'gpu_evaluator': [2,3,4,5,6,7],  # The GPU used as evaluator
-    'gpu_trainner':  0,         # The GPU used as trainner
-    'available_mem_gb': 180,
-    'tqdm_wait_time': 0.1,      # timeout parameter for global lock. tqdm randomly deadlock without this.
+    'episode_size': 100000,                  # Number of samples to simulate during a new iteration.
+    'tempThreshold': 15,                     # MCTS result policy tempreture will reduce 0 after this number of game turns
+    'updateThreshold': 0.55,                 # During arena playoff, new neural net will be accepted if threshold or more of games are won.
+    'numMCTSSims': 1000,                     # Number of games moves for MCTS to simulate.
+    'arenaCompare': 40,                      # Number of games to play during arena play to determine if new net will be accepted.
+    'cpuct': 1,                              # Higher value lead to more exploration
+    'endGameRewardWeight': 1,                # Amplify the real endgame reward over network estimation
+             
+    'sampler_num': 15,                       # The number of parallel sampling process.
+    'mcts_per_sampler': 64,                  # The number of mcts inside each sampling process, higher value lead to larger query batch
+    'gpu_evaluator': [3,4,5,6,7],            # The GPU used as evaluator
+    'gpu_trainner':  [0, 1, 2],              # The GPU used as trainner
+    'available_mem_gb': 150,        
+    'tqdm_wait_time': 0.1,                   # timeout parameter for global lock. tqdm randomly deadlock without this.
+    'port': 47152,                           # localhost port number for pytorch ddp
 
-    'checkpoint': './result0719/',
-    'load_model': True,
-    'load_folder_file': ('./result0719/','checkpoint_1689831636.pth.tar','checkpoint_1689831636.data.pth.tar'),
-    'numItersForTrainExamplesHistory': 30,
+    'checkpoint': './result0719/',           # checkpoint saving directory
+    'load_model': True,                      # load a check point to start
+    'model_series_number': 10721,            # the load model series number
+    'numItersForTrainExamplesHistory': 30,   # the maximum iterations that sample buffer keeps
+
+    'lr': 0.001,
+    'dropout': 0.3,
+    'epochs': 10,
+    'batch_size': 256,
+    'cuda': torch.cuda.is_available(),
+    'num_channels': 512,
 })
 
 
 def main():
     log.info('Loading %s...', Game.__name__)
-    g = Game(15)
-
-    # if args.load_model:
-    #     log.info('Loading checkpoint "%s/%s"...', args.load_folder_file[0], args.load_folder_file[1])
-    #     nnet.load_checkpoint(args.load_folder_file[0], args.load_folder_file[1])
-    # else:
-    #     log.warning('Not loading a checkpoint!')
+    g = Game(args.game_size)
 
     log.info('Loading the Coach...')
-    # c = Coach(game=g, nnet=nn(g), args=args)
-    c = mpCoach(game=g, nnet=nn, args=args)
-
-    # if args.load_model:
-    #     log.info("Loading 'trainExamples' from file...")
-    #     c.loadTrainExamples()
+    c = mpCoach(game=g, args=args)
 
     log.info('Starting the learning process 🎉')
     c.learn()
-
 
 if __name__ == "__main__":
     main()
