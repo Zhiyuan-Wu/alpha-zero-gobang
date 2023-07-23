@@ -233,7 +233,7 @@ class batch_MCTS():
             self.search_path.append((s, best_act))
 
     def _set_result(self):
-        ''' provides a fake function that set all queries from extend(). only for debug purpose.
+        ''' provides a fake function that set all queries from extend() with dummy answers. only for debug purpose.
         '''
         if len(self.qb)>0:
             query_index, query_content, query_state_string = zip(*self.qb)

@@ -9,7 +9,7 @@ from torch.multiprocessing import RLock, Queue, Process, Value
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from gobang.pytorch.GobangNNet import GobangNNet as onnet
-from gobang.pytorch.GobangNNet import loss_pi, loss_v
+from gobang.pytorch.GobangNNet import loss_pi, loss_v, entropy
 import time, datetime
 from circular_dict import CircularDict
 import os
@@ -52,6 +52,9 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
             pi, v = q_ans.get()
             _end_time = time.time()
             gpu_time += _end_time - _start_time
+
+            v = np.exp(v)
+            v /= np.sum(v, -1, keepdims=True)
             
             # set result
             for j,s in enumerate(query_state_string):
@@ -72,7 +75,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
                     shared_Ps[s] /= np.sum(shared_Ps[s])
                 
                 # Set values
-                worker_pool[query_index[j]].current_value = -v[j]
+                worker_pool[query_index[j]].current_value = - random.choices([1, -1, 1e-4],weights=v[j])[0]
 
             # backprop
             for i in range(num_workers):
@@ -105,7 +108,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
 
             r = game.getGameEnded(mcts.board, mcts.player)
             if r != 0:
-                trainExamples += [(x[0], x[1], r * ((-1) ** (x[1] != mcts.player))) for x in mcts.game_record]
+                trainExamples += [(x[0], x[1], (2 if r==0.0001 else (0 if x[2]==mcts.player else 1))) for x in mcts.game_record]
                 worker_pool[i].reset()
                 game_counter += 1
 
@@ -183,7 +186,7 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
         _path = os.path.join(args.checkpoint, f"checkpoint_{v_model.value}.pth")
         ddp_model.load_state_dict(torch.load(_path, map_location=map_location))
 
-    optimizer = optim.Adam(ddp_model.parameters(), lr=0.001)
+    optimizer = optim.Adam(ddp_model.parameters(), lr=args.lr)
     ddp_model.train()
 
     episodeHistory = []
@@ -217,12 +220,13 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
             for epoch in range(args.epochs):
                 pi_losses = AverageMeter()
                 v_losses = AverageMeter()
+                pi_entropy = AverageMeter()
                 for _ in range(batch_count): # do we need make batch_count consistent between trainers? or set a constant value
                     sample_ids = np.random.randint(len(examples), size=args.batch_size)
                     boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
-                    boards = torch.FloatTensor(np.array(boards).astype(np.float64))
+                    boards = torch.FloatTensor(np.array(boards).astype(np.float32))
                     target_pis = torch.FloatTensor(np.array(pis))
-                    target_vs = torch.FloatTensor(np.array(vs).astype(np.float64))
+                    target_vs = torch.FloatTensor(np.array(vs).astype(np.float32))
 
                     # predict
                     if args.cuda:
@@ -232,13 +236,15 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
                     out_pi, out_v = ddp_model(boards)
                     l_pi = loss_pi(target_pis, out_pi)
                     l_v = loss_v(target_vs, out_v)
+                    l_e = entropy(out_pi)
                     total_loss = l_pi + l_v
 
                     # record loss
                     pi_losses.update(l_pi.item(), boards.size(0))
                     v_losses.update(l_v.item(), boards.size(0))
+                    pi_entropy.update(l_e.item(), boards.size(0))
                     if rank==0:
-                        t_train.set_postfix(Loss_pi=pi_losses, Loss_v=v_losses)
+                        t_train.set_postfix(L_pi=pi_losses, L_v=v_losses, E_pi=pi_entropy)
 
                     # compute gradient and do SGD step
                     optimizer.zero_grad()
@@ -274,6 +280,7 @@ def Controller(q_data, trainer_pool, v_model, game, args, lock):
     data_counter = 0
     old_model = v_model.value
     iteration_counter = 0
+    start_time = time.time()
     
     while 1:
         # Collect data from samplers
@@ -297,8 +304,9 @@ def Controller(q_data, trainer_pool, v_model, game, args, lock):
         if v_model.value > old_model:
             old_model = v_model.value
             iteration_counter += 1
+            t_status.update(1)
 
-        t_status.set_postfix(iter=iteration_counter, model=str(v_model.value), datasize=data_counter)
+        t_status.set_postfix(iter=iteration_counter, m=str(v_model.value % 100), d=f"{data_counter//1000}k", s=f"{data_counter/(time.time()-start_time)*60/1000 : .1f}k/min")
         time.sleep(0.1)
 
 class mpCoach():

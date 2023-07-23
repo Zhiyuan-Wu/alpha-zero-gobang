@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 coloredlogs.install(level='ERROR')  # Change this to DEBUG to see more info.
 
 args = dotdict({
-    'game_size': 15,                         # Board size
+    'game_size': 9,                         # Board size
     'numIters': 100,
     'episode_size': 100000,                  # Number of samples to simulate during a new iteration.
     'tempThreshold': 15,                     # MCTS result policy tempreture will reduce 0 after this number of game turns
@@ -29,22 +29,23 @@ args = dotdict({
     'sampler_num': 15,                       # The number of parallel sampling process.
     'mcts_per_sampler': 64,                  # The number of mcts inside each sampling process, higher value lead to larger query batch
     'gpu_evaluator': [3,4,5,6,7],            # The GPU used as evaluator
-    'gpu_trainner':  [0, 1, 2],              # The GPU used as trainner
+    'gpu_trainner':  [0,1,2],                # The GPU used as trainner
     'available_mem_gb': 150,        
     'tqdm_wait_time': 0.1,                   # timeout parameter for global lock. tqdm randomly deadlock without this.
     'port': 47152,                           # localhost port number for pytorch ddp
 
-    'checkpoint': './result0719/',           # checkpoint saving directory
-    'load_model': True,                      # load a check point to start
-    'model_series_number': 1689939786,       # the load model series number
+    'checkpoint': './result0723/',           # checkpoint saving directory
+    'load_model': False,                      # load a check point to start
+    'model_series_number': 1690034711,       # the load model series number
     'numItersForTrainExamplesHistory': 30,   # the maximum iterations that sample buffer keeps
 
-    'lr': 0.001,
+    'lr': 0.0001,
     'dropout': 0.3,
-    'epochs': 10,
+    'epochs': 1,
     'batch_size': 256,
     'cuda': torch.cuda.is_available(),
-    'num_channels': 512,
+    'num_channels': 128,
+    'block_num': 6,
 })
 
 

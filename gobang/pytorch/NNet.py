@@ -115,11 +115,15 @@ class NNetWrapper():
             'state_dict': self.nnet.state_dict(),
         }, filepath)
 
-    def load_checkpoint(self, folder='checkpoint', filename='checkpoint.pth.tar'):
+    def load_checkpoint(self, folder='checkpoint', filename='checkpoint.pth.tar', remove_prefix=False):
         # https://github.com/pytorch/examples/blob/master/imagenet/main.py#L98
         filepath = os.path.join(folder, filename)
         if not os.path.exists(filepath):
             raise ("No model in path {}".format(filepath))
         map_location = 'cuda:'+str(self.gpu_id) if args.cuda else 'cpu'
         checkpoint = torch.load(filepath, map_location=map_location)
-        self.nnet.load_state_dict(checkpoint['state_dict'])
+        if remove_prefix:
+            consume_prefix_in_state_dict_if_present(checkpoint, 'module.')
+            self.nnet.load_state_dict(checkpoint)
+        else:
+            self.nnet.load_state_dict(checkpoint['state_dict'])
