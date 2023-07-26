@@ -39,9 +39,10 @@ args = dotdict({
     'model_series_number': 1690034711,       # the load model series number
     'numItersForTrainExamplesHistory': 30,   # the maximum iterations that sample buffer keeps
 
-    'lr': 0.0001,
+    'lr': 0.001,
+    'pi_loss_weight': 0.1,
     'dropout': 0.3,
-    'epochs': 1,
+    'epochs': 2,
     'batch_size': 256,
     'cuda': torch.cuda.is_available(),
     'num_channels': 128,

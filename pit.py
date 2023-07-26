@@ -32,7 +32,7 @@ n1 = NNet(g)
 #     n1.load_checkpoint('./pretrained_models/othello/pytorch/','6x100x25_best.pth.tar')
 # else:
 #     n1.load_checkpoint('./pretrained_models/othello/pytorch/','8x8_100checkpoints_best.pth.tar')
-n1.load_checkpoint('./temp/','checkpoint_45.pth.tar')
+n1.load_checkpoint('./temp/','checkpoint_60.pth.tar')
 # n1.load_checkpoint('./result0719/','checkpoint_1690087560.pth', remove_prefix=True)
 args1 = dotdict({'numMCTSSims': 10000, 'cpuct':1.0, 'endGameRewardWeight': 1,})
 mcts1 = MCTS(g, n1, args1)
@@ -42,7 +42,7 @@ if human_vs_cpu:
     player2 = hp
 else:
     n2 = NNet(g)
-    n2.load_checkpoint('./temp/','checkpoint_45.pth.tar')
+    n2.load_checkpoint('./temp/','checkpoint_60.pth.tar')
     # n1.load_checkpoint('./result0719/','checkpoint_1690034711.pth', remove_prefix=True)
     args2 = dotdict({'numMCTSSims': 10000, 'cpuct': 1.0, 'endGameRewardWeight': 1,})
     mcts2 = MCTS(g, n2, args2)

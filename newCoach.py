@@ -52,9 +52,6 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
             pi, v = q_ans.get()
             _end_time = time.time()
             gpu_time += _end_time - _start_time
-
-            v = np.exp(v)
-            v /= np.sum(v, -1, keepdims=True)
             
             # set result
             for j,s in enumerate(query_state_string):
@@ -87,7 +84,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
             canonicalBoard = game.getCanonicalForm(mcts.board, mcts.player)
             temp = int(mcts.episodeStep < args.tempThreshold)
             s = game.stringRepresentation(canonicalBoard)
-            counts = [mcts.Nsa[s][a] if s in mcts.Nsa else 0 for a in range(game.getActionSize())]
+            counts = mcts.Nsa[s]
 
             if temp == 0:
                 bestAs = np.array(np.argwhere(counts == np.max(counts))).flatten()
@@ -96,8 +93,8 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
                 probs[bestA] = 1
                 pi = probs
             else:
-                counts = [x ** (1. / temp) for x in counts]
-                counts_sum = float(sum(counts))
+                counts = counts ** (1. / temp)
+                counts_sum = np.sum(counts)
                 pi = [x / counts_sum for x in counts]
             sym = game.getSymmetries(canonicalBoard, pi)
             mcts.game_record += [(b, p, mcts.player) for b, p in sym]
@@ -108,7 +105,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
 
             r = game.getGameEnded(mcts.board, mcts.player)
             if r != 0:
-                trainExamples += [(x[0], x[1], (2 if r==0.0001 else (0 if x[2]==mcts.player else 1))) for x in mcts.game_record]
+                trainExamples += [(x[0], x[1], (2 if r==0.0001 else (0 if x[2]==r else 1))) for x in mcts.game_record]
                 worker_pool[i].reset()
                 game_counter += 1
 
@@ -166,7 +163,9 @@ def Evaluator(sampler_pool, v_model, gpu_id, game,args):
                 board = board.contiguous().cuda(gpu_id)
                 with torch.no_grad():
                     pi, v = model(board)
-                ans = (torch.exp(pi).data.cpu().numpy().squeeze(), v.data.cpu().numpy().squeeze())
+                pi = torch.exp(pi).data.cpu().numpy().squeeze()
+                v = torch.softmax(v, -1).data.cpu().numpy().squeeze()
+                ans = (pi, v)
                 q_ans.put(ans)
 
 def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
@@ -221,12 +220,13 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
                 pi_losses = AverageMeter()
                 v_losses = AverageMeter()
                 pi_entropy = AverageMeter()
-                for _ in range(batch_count): # do we need make batch_count consistent between trainers? or set a constant value
-                    sample_ids = np.random.randint(len(examples), size=args.batch_size)
-                    boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
-                    boards = torch.FloatTensor(np.array(boards).astype(np.float32))
-                    target_pis = torch.FloatTensor(np.array(pis))
-                    target_vs = torch.FloatTensor(np.array(vs).astype(np.float32))
+                for i in range(batch_count): # do we need make batch_count consistent between trainers? or set a constant value
+                    # sample_ids = np.random.randint(len(examples), size=args.batch_size)
+                    # boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
+                    boards, pis, vs = list(zip(*(examples[i*args.batch_size: (i+1)*args.batch_size])))
+                    boards = torch.from_numpy(np.array(boards).astype(np.float32))
+                    target_pis = torch.from_numpy(np.array(pis))
+                    target_vs = torch.from_numpy(np.array(vs).astype(np.int64))
 
                     # predict
                     if args.cuda:
@@ -237,7 +237,7 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
                     l_pi = loss_pi(target_pis, out_pi)
                     l_v = loss_v(target_vs, out_v)
                     l_e = entropy(out_pi)
-                    total_loss = l_pi + l_v
+                    total_loss = args.pi_loss_weight * l_pi + l_v
 
                     # record loss
                     pi_losses.update(l_pi.item(), boards.size(0))
