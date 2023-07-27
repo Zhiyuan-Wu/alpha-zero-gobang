@@ -40,7 +40,7 @@ args = dotdict({
     'numItersForTrainExamplesHistory': 30,   # the maximum iterations that sample buffer keeps
 
     'lr': 0.001,
-    'pi_loss_weight': 0.1,
+    'pi_loss_weight': 1.0,
     'dropout': 0.3,
     'epochs': 2,
     'batch_size': 256,

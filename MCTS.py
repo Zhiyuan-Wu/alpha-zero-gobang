@@ -4,8 +4,10 @@ import math
 import numpy as np
 import time
 from utils import *
+import torch
 
 EPS = 1e-8
+CUDA_AVAILABLE = torch.cuda.is_available()
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +88,16 @@ class MCTS():
         if s not in self.Ps:
             # leaf node
             _record_time = time.time()
-            self.Ps[s], v = self.nnet.predict(canonicalBoard)
+            _b = torch.FloatTensor(canonicalBoard.astype(np.float64))
+            if CUDA_AVAILABLE: _b = _b.contiguous().cuda(0)
+            _b = _b.view(-1, self.game.n, self.game.n)
+            self.nnet.eval()
+            with torch.no_grad():
+                _pi, _v = self.nnet(_b)
+                _pi = torch.exp(_pi).data.cpu().numpy().squeeze()
+                _v = torch.softmax(_v, -1).data.cpu().numpy().squeeze()
+            self.Ps[s], v = _pi, _v
+            v = random.choices([1, -1, 1e-4],weights=np.exp(v))[0]
             self.gpu_accumulate_time += time.time() - _record_time
             valids = self.game.getValidMoves(canonicalBoard, 1)
             self.Ps[s] = self.Ps[s] * valids  # masking invalid moves
@@ -265,7 +276,7 @@ class batch_MCTS():
         '''
         self.search_count += 1
         self.total_search_depth += len(self.search_path)
-        for s,a in self.search_path:
+        for s,a in self.search_path[::-1]:
             if s in self.Qsa:
                 _qsa = self.Qsa[s][a]
                 _nsa = self.Nsa[s][a]
