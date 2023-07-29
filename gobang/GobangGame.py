@@ -1,12 +1,10 @@
 from __future__ import print_function
 import sys
 sys.path.append('..')
-from Game import Game
-from .GobangLogic import Board
 import numpy as np
 from cfunc.cfunc import cgetGameEnded
 
-class GobangGame(Game):
+class GobangGame():
     def __init__(self, n=15, nir=5):
         self.n = n
         self.n_in_row = nir

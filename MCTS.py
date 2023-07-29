@@ -29,6 +29,7 @@ class MCTS():
         self.Es = {}  # stores game.getGameEnded ended for board s
         self.Vs = {}  # stores game.getValidMoves for board s
         self.gpu_accumulate_time = 0
+        self.device = next(nnet.parameters()).device
 
     def getActionProb(self, canonicalBoard, temp=1):
         """
@@ -89,7 +90,7 @@ class MCTS():
             # leaf node
             _record_time = time.time()
             _b = torch.FloatTensor(canonicalBoard.astype(np.float64))
-            if CUDA_AVAILABLE: _b = _b.contiguous().cuda(0)
+            if CUDA_AVAILABLE: _b = _b.contiguous().cuda(self.device)
             _b = _b.view(-1, self.game.n, self.game.n)
             self.nnet.eval()
             with torch.no_grad():

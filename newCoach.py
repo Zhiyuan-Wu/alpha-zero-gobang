@@ -14,9 +14,7 @@ import time, datetime
 from circular_dict import CircularDict
 import os
 from utils import *
-
-from Arena import Arena
-from MCTS import batch_MCTS
+from MCTS import MCTS, batch_MCTS
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +32,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
     game_counter_old = 0
     start_time = time.time()
     gpu_time = 0
-    t_bar = tqdm(total=100, desc=f'Sampler {identifier:{2}}', position=identifier+3, lock_args=(True, args.tqdm_wait_time))
+    t_bar = tqdm(total=100, desc=f'Sampler {identifier:{2}}', position=identifier+4, lock_args=(True, args.tqdm_wait_time))
     t_bar.set_lock(lock)
 
     while 1:
@@ -173,7 +171,7 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
     os.environ['MASTER_PORT'] = str(args.port)
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     if rank==0:
-        t_train = tqdm(total=1, desc='Training', position=2, lock_args=(True, args.tqdm_wait_time), leave=False)
+        t_train = tqdm(total=1, desc='Training', position=3, lock_args=(True, args.tqdm_wait_time), leave=False)
         t_train.set_lock(lock)
     
     model = onnet(game, args)
@@ -266,19 +264,90 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
             t_train.set_postfix(time=datetime.timedelta(seconds=int(time.time()-start_time)))
         time.sleep(0.1)
 
-def Controller(q_data, trainer_pool, v_model, game, args, lock):
-    ''' This function is the Trainer process, that:
+def Arena(v_model_sample, v_model_train, gpu_id, game, args, lock):
+    ''' This function is the Arena process, that:
+        - run game between two models
+        - push best model to evaluator
+    '''
+    model_best = onnet(game, args)
+    model_best.cuda(gpu_id)
+    model_current = onnet(game, args)
+    model_current.cuda(gpu_id)
+
+    if v_model_sample.value > 0:
+        map_location = f'cuda:{gpu_id}'
+        _path = os.path.join(args.checkpoint, f"checkpoint_{v_model_sample.value}.pth")
+        state_dict = torch.load(_path, map_location=map_location)
+        consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+        model_best.load_state_dict(state_dict)
+
+    if v_model_train.value > 0:
+        map_location = f'cuda:{gpu_id}'
+        _path = os.path.join(args.checkpoint, f"checkpoint_{v_model_train.value}.pth")
+        state_dict = torch.load(_path, map_location=map_location)
+        consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+        model_current.load_state_dict(state_dict)
+
+    last_model = v_model_train.value
+    t_status = tqdm(total=args.arenaCompare, desc='Arena', position=1, lock_args=(True, args.tqdm_wait_time))
+    t_status.set_lock(lock)
+    t_status.set_postfix(time=time.ctime())
+
+    while 1:
+        if v_model_train.value > last_model:
+            map_location = f'cuda:{gpu_id}'
+            _path = os.path.join(args.checkpoint, f"checkpoint_{v_model_train.value}.pth")
+            state_dict = torch.load(_path, map_location=map_location)
+            consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+            model_current.load_state_dict(state_dict)
+            last_model = v_model_train.value
+            t_status.reset(total=args.arenaCompare)
+
+            score_pad = [0, 0, 0] # best_score : current_score : draw
+            for i in range(args.arenaCompare):
+                mcts_best = MCTS(game, model_best, args)
+                mcts_current = MCTS(game, model_current, args)
+                board = np.zeros((game.n, game.n), dtype=np.int8)
+                cur_player = 1
+                best_color = {0: 1, 1: -1}[i%2]
+                current_color = {0: -1, 1: 1}[i%2]
+                while 1:
+                    _player = {best_color: mcts_best, current_color: mcts_current}[cur_player]
+                    canonicalBoard = game.getCanonicalForm(board, cur_player)
+                    pi = _player.getActionProb(canonicalBoard, 0)
+                    action = np.random.choice(len(pi), p=pi)
+                    board, cur_player = game.getNextState(board, cur_player, action)
+                    r = game.getGameEnded(board, 0)
+                    if r!=0:
+                        score_pad[{best_color: 0, current_color: 1, 1e-4: 2}[r]] += 1
+                        break
+                t_status.update(1)
+                t_status.set_postfix(r=f'{str(v_model_sample.value)} vs {str(last_model)}={score_pad[0]}:{score_pad[1]}:{score_pad[2]}')
+            
+            current_win_rate = (score_pad[1]+score_pad[2]) / args.arenaCompare
+            if current_win_rate > args.updateThreshold:
+                map_location = f'cuda:{gpu_id}'
+                _path = os.path.join(args.checkpoint, f"checkpoint_{last_model}.pth")
+                state_dict = torch.load(_path, map_location=map_location)
+                consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+                model_best.load_state_dict(state_dict)
+                v_model_sample.value = last_model
+        
+        time.sleep(0.1)
+
+def Controller(q_data, trainer_pool, v_model_sample, v_model_train, game, args, lock):
+    ''' This function is the Controller process, that:
             - collect data from sampler
-            - train new models and push latest one to evaluator
+            - push data to trainer
     '''
     t_status = tqdm(total=args.numIters, desc='Status', position=0, lock_args=(True, args.tqdm_wait_time))
     t_status.set_lock(lock)
-    t_sample = tqdm(total=args.episode_size, desc="Sampling", position=1, lock_args=(True, args.tqdm_wait_time))
+    t_sample = tqdm(total=args.episode_size, desc="Sampling", position=2, lock_args=(True, args.tqdm_wait_time))
     t_sample.set_lock(lock)
 
     sample_buffer = []
     data_counter = 0
-    old_model = v_model.value
+    old_model = v_model_train.value
     iteration_counter = 0
     start_time = time.time()
     
@@ -301,12 +370,12 @@ def Controller(q_data, trainer_pool, v_model, game, args, lock):
                     sample_buffer = []
                     t_sample.reset()
 
-        if v_model.value > old_model:
-            old_model = v_model.value
+        if v_model_train.value > old_model:
+            old_model = v_model_train.value
             iteration_counter += 1
             t_status.update(1)
 
-        t_status.set_postfix(iter=iteration_counter, m=str(v_model.value % 100), d=f"{data_counter//1000}k", s=f"{data_counter/(time.time()-start_time)*60/1000 : .1f}k/min")
+        t_status.set_postfix(iter=iteration_counter, best=str(v_model_sample.value % 1000), cur=str(v_model_train.value % 1000), d=f"{data_counter//1000000}M", s=f"{data_counter/(time.time()-start_time)*60/1000 : .1f}k/min")
         time.sleep(0.1)
 
 class mpCoach():
@@ -317,9 +386,11 @@ class mpCoach():
 
     def learn(self):
         if self.args.load_model:
-            v_model = Value('i', self.args.model_series_number)
+            v_model_sample = Value('i', self.args.model_series_number)
+            v_model_train = Value('i', self.args.model_series_number)
         else:
-            v_model = Value('i', -1)
+            v_model_sample = Value('i', -1)
+            v_model_train = Value('i', -1)
         sampler_num = self.args.sampler_num
         evaluator_num = len(self.args.gpu_evaluator)
         trainer_num = len(self.args.gpu_trainner)
@@ -330,21 +401,23 @@ class mpCoach():
         for i in range(sampler_num):
             q_job = Queue()
             q_ans = Queue()
-            sampler = Process(target=Sampler, args=(i, q_job, q_ans, q_collector, v_model, self.game, self.args, self.global_lock))
+            sampler = Process(target=Sampler, args=(i, q_job, q_ans, q_collector, v_model_sample, self.game, self.args, self.global_lock))
             sampler.start()
             sampler_pool[i] = [q_job, q_ans]
         
         for i in range(evaluator_num):
             sampler_pool_subset = {k: sampler_pool[k] for j,k in enumerate(sampler_pool) if j%evaluator_num==i}
-            evaluator = Process(target=Evaluator, args=(sampler_pool_subset, v_model, self.args.gpu_evaluator[i], self.game, self.args))
+            evaluator = Process(target=Evaluator, args=(sampler_pool_subset, v_model_sample, self.args.gpu_evaluator[i], self.game, self.args))
             evaluator.start()
 
         for i in range(trainer_num):
             q_distributor = Queue()
-            trainer = Process(target=mpTrainer, args=(self.args.gpu_trainner[i], len(self.args.gpu_trainner), v_model, q_distributor, self.game, self.args, self.global_lock))
+            trainer = Process(target=mpTrainer, args=(self.args.gpu_trainner[i], len(self.args.gpu_trainner), v_model_train, q_distributor, self.game, self.args, self.global_lock))
             trainer.start()
             trainer_pool[i] = q_distributor
         
-        controller = Process(target=Controller, args=(q_collector, trainer_pool, v_model, self.game, self.args, self.global_lock))
+        arena = Process(target=Arena, args=(v_model_sample, v_model_train, self.args.gpu_arena, self.game, self.args, self.global_lock))
+        arena.start()
+        controller = Process(target=Controller, args=(q_collector, trainer_pool, v_model_sample, v_model_train, self.game, self.args, self.global_lock))
         controller.start()
         controller.join()

@@ -2,7 +2,6 @@ import logging
 
 import coloredlogs
 
-from Coach import Coach
 from newCoach import mpCoach
 from gobang.GobangGame import GobangGame as Game
 from utils import *
@@ -16,37 +15,38 @@ log = logging.getLogger(__name__)
 coloredlogs.install(level='ERROR')  # Change this to DEBUG to see more info.
 
 args = dotdict({
-    'game_size': 9,                         # Board size
-    'numIters': 100,
+    'game_size': 15,                         # Board size
+    'numIters': 100,                         # Not used
     'episode_size': 100000,                  # Number of samples to simulate during a new iteration.
-    'tempThreshold': 15,                     # MCTS result policy tempreture will reduce 0 after this number of game turns
+    'tempThreshold': 30,                     # MCTS result policy tempreture will reduce 0 after this number of game turns
     'updateThreshold': 0.55,                 # During arena playoff, new neural net will be accepted if threshold or more of games are won.
     'numMCTSSims': 1000,                     # Number of games moves for MCTS to simulate.
     'arenaCompare': 40,                      # Number of games to play during arena play to determine if new net will be accepted.
     'cpuct': 1,                              # Higher value lead to more exploration
     'endGameRewardWeight': 1,                # Amplify the real endgame reward over network estimation
              
-    'sampler_num': 15,                       # The number of parallel sampling process.
+    'sampler_num': 12,                       # The number of parallel sampling process.
     'mcts_per_sampler': 64,                  # The number of mcts inside each sampling process, higher value lead to larger query batch
-    'gpu_evaluator': [3,4,5,6,7],            # The GPU used as evaluator
+    'gpu_evaluator': [4,5,6,7],              # The GPU used as evaluator
     'gpu_trainner':  [0,1,2],                # The GPU used as trainner
-    'available_mem_gb': 150,        
+    'gpu_arena': 3,                          # The GPU used as arena
+    'available_mem_gb': 150,                 # A number that limit the usage of memory
     'tqdm_wait_time': 0.1,                   # timeout parameter for global lock. tqdm randomly deadlock without this.
     'port': 47152,                           # localhost port number for pytorch ddp
 
-    'checkpoint': './result0723/',           # checkpoint saving directory
-    'load_model': False,                      # load a check point to start
-    'model_series_number': 1690034711,       # the load model series number
-    'numItersForTrainExamplesHistory': 30,   # the maximum iterations that sample buffer keeps
+    'checkpoint': './result0729/',           # checkpoint saving directory
+    'load_model': False,                     # load a checkpoint to start
+    'model_series_number': 1690463375,       # the load model series number
+    'numItersForTrainExamplesHistory': 20,   # the maximum iterations that sample buffer keeps
 
-    'lr': 0.001,
-    'pi_loss_weight': 1.0,
-    'dropout': 0.3,
-    'epochs': 2,
-    'batch_size': 256,
-    'cuda': torch.cuda.is_available(),
-    'num_channels': 128,
-    'block_num': 6,
+    'lr': 0.001,                             # learning rate
+    'pi_loss_weight': 1.0,                   # loss function weight for policy term
+    'dropout': 0.3,                          # dropout rate
+    'epochs': 2,                             # number of training epochs for each iteration
+    'batch_size': 512,                       # trainning batchsize
+    'cuda': torch.cuda.is_available(),       # if cuda avaliable. Note: not tested when cuda not avaliable
+    'num_channels': 128,                     # neural network feature channel number
+    'block_num': 6,                          # neural network residual convolution block number
 })
 
 

@@ -10,6 +10,7 @@ import torch
 from utils import *
 import os
 from MCTS import MCTS
+import argparse
 
 args = dotdict({
     'game_size': 9, 
@@ -20,8 +21,6 @@ args = dotdict({
     'cuda': torch.cuda.is_available(),
     'num_channels': 128,
     'block_num': 6,
-    'checkpoint': './result0723/',
-    'model_version': 1690437939,
     'numMCTSSims': 1000,
     'cpuct': 1,
     'endGameRewardWeight': 1,
@@ -236,14 +235,14 @@ class Engine(object):
         else:
             raise ValueError("unknown player: {}".format(arguments))
 
-class NueralPlayer(object):
+class NeuralPlayer():
     def __init__(self, size=19, komi=6.5):
         self.size = size
         self.komi = komi
         self.board = np.zeros((size, size), dtype=np.int8)
         self.g = Game(size)
         self.nnet = onnet(self.g, args)
-        _path = os.path.join(args.checkpoint, f"checkpoint_{args.model_version}.pth")
+        _path = args.model_path
         if args.cuda:
             map_location = 'cuda:0'
             self.nnet.cuda(0)
@@ -283,7 +282,16 @@ class NueralPlayer(object):
         return (action//self.size + 1, action%self.size + 1)
 
 if __name__=="__main__":
-    g = NueralPlayer(args.game_size)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_path', type=str, default=None, help='path to the neural network checkpoint')
+    parser.add_argument('--game_size', type=int, default=15, help='board size')
+    parser.add_argument('--numMCTSSims', type=int, default=1000, help='the number of random search for each move')
+    a = parser.parse_args()
+    args["model_path"] = a.model_path
+    args["game_size"] = a.game_size
+    args["numMCTSSims"] = a.numMCTSSims
+
+    g = NeuralPlayer(args.game_size)
     e = Engine(g)
     print("GTP engine Ready.")
     while 1:
