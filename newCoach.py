@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
     num_workers = args.mcts_per_sampler
-    mem_limit_bytes = int(args.available_mem_gb * 0.6 / args.sampler_num / 3 * 1024 * 1024 * 1024)
+    mem_limit_bytes = int(args.available_mem_gb * 0.5 / args.sampler_num / 3 * 1024 * 1024 * 1024)
     shared_Ps = CircularDict(maxsize_bytes=int(mem_limit_bytes*2))
     shared_Es = CircularDict(maxsize_bytes=int(mem_limit_bytes*0.5))
     shared_Vs = CircularDict(maxsize_bytes=int(mem_limit_bytes*0.5))
@@ -70,7 +70,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
                     shared_Ps[s] /= np.sum(shared_Ps[s])
                 
                 # Set values
-                worker_pool[query_index[j]].current_value = - random.choices([1, -1, 1e-4],weights=v[j])[0]
+                worker_pool[query_index[j]].current_value = - (v[j][0]-v[j][1]+1e-4*v[j][2])
 
             # backprop
             for i in range(num_workers):
@@ -204,7 +204,7 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
             data_update_time = time.time()
         
         # Train model when new data arrive
-        if last_train_time < data_update_time:
+        if last_train_time < data_update_time and len(episodeHistory) > args.leastTrainingWindow:
             examples = []
             for e in episodeHistory:
                 examples.extend(e)
@@ -269,6 +269,8 @@ def Arena(v_model_sample, v_model_train, gpu_id, game, args, lock):
         - run game between two models
         - push best model to evaluator
     '''
+    args.__setattr__("numMCTSSims", 100) # Todo: parallize arena playoff to allow more search
+
     model_best = onnet(game, args)
     model_best.cuda(gpu_id)
     model_current = onnet(game, args)

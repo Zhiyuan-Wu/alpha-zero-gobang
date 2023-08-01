@@ -98,7 +98,7 @@ class MCTS():
                 _pi = torch.exp(_pi).data.cpu().numpy().squeeze()
                 _v = torch.softmax(_v, -1).data.cpu().numpy().squeeze()
             self.Ps[s], v = _pi, _v
-            v = random.choices([1, -1, 1e-4],weights=np.exp(v))[0]
+            v = v[0]-v[1]+1e-4*v[2]
             self.gpu_accumulate_time += time.time() - _record_time
             valids = self.game.getValidMoves(canonicalBoard, 1)
             self.Ps[s] = self.Ps[s] * valids  # masking invalid moves

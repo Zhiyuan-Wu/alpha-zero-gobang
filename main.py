@@ -35,9 +35,10 @@ args = dotdict({
     'port': 47152,                           # localhost port number for pytorch ddp
 
     'checkpoint': './result0729/',           # checkpoint saving directory
-    'load_model': False,                     # load a checkpoint to start
-    'model_series_number': 1690463375,       # the load model series number
+    'load_model': True,                     # load a checkpoint to start
+    'model_series_number': 1690705879,       # the load model series number
     'numItersForTrainExamplesHistory': 20,   # the maximum iterations that sample buffer keeps
+    'leastTrainingWindow': 5,                # the lowest number of iterations to start training
 
     'lr': 0.001,                             # learning rate
     'pi_loss_weight': 1.0,                   # loss function weight for policy term
