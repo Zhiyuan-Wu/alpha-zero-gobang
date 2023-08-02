@@ -26,6 +26,7 @@ args = dotdict({
     'numMCTSSims': 1000,
     'cpuct': 1,
     'endGameRewardWeight': 1,
+    'gtp_largest_analyze_length': 5,
 })
 
 def pre_engine(s):
@@ -195,6 +196,7 @@ class Engine(object):
 
     def cmd_quit(self, arguments):
         self.disconnect = True
+        print("=\n\n")
         exit()
 
     def cmd_boardsize(self, arguments):
@@ -245,13 +247,16 @@ class Engine(object):
 
         print("=")
         while loop_counter<10:
-            counts, winrate = self._game.analyze(c, 200)
+            counts, winrate, pv = self._game.analyze(c, 300)
             _m = ""
             for i in range(len(counts)):
                 if counts[i] == 0:
                     continue
                 _m += f" info move {gtp_vertex((i//self.size + 1, i%self.size + 1))} visits {counts[i]} winrate {round((winrate[i]+1)/2,6)} pv {gtp_vertex((i//self.size + 1, i%self.size + 1))}"
-            print(_m.strip())
+                if len(pv[i])>0:
+                    _pv = " ".join([gtp_vertex((a//self.size + 1, a%self.size + 1)) for a in pv[i]])
+                    _m += " " + _pv
+            print(_m.strip(), flush=True)
             try:
                 if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
                     break
@@ -313,7 +318,24 @@ class NeuralPlayer():
         s = self.g.stringRepresentation(canonicalBoard)
         counts = [self.mcts.Nsa[(s, a)] if (s, a) in self.mcts.Nsa else 0 for a in range(self.g.getActionSize())]
         winrate = [self.mcts.Qsa[(s,a)] if (s, a) in self.mcts.Qsa else -1 for a in range(self.g.getActionSize())]
-        return counts, winrate
+        pv = []
+        for a in range(self.g.getActionSize()):
+            _pv = []
+            if counts[a] > 0:
+                _current = canonicalBoard
+                _a = a
+                for _ in range(args.gtp_largest_analyze_length):
+                    _current, _ = self.g.getNextState(_current, 1, _a)
+                    _current = self.g.getCanonicalForm(_current, -1)
+                    _s = self.g.stringRepresentation(_current)
+                    _counts = [self.mcts.Nsa[(_s, a)] if (_s, a) in self.mcts.Nsa else 0 for a in range(self.g.getActionSize())]
+                    if np.any(np.array(_counts)>0):
+                        _a = np.argmax(_counts)
+                        _pv.append(_a)
+                    else:
+                        break
+            pv.append(_pv)
+        return counts, winrate, pv
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
