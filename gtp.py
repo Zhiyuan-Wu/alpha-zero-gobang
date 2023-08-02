@@ -280,6 +280,34 @@ class NeuralPlayer():
         pi = self.mcts.getActionProb(canonicalBoard, temp=0)
         action = np.random.choice(len(pi), p=pi)
         return (action//self.size + 1, action%self.size + 1)
+    
+    def analyze(self, color):
+        # analyze game, plot strategy and win rate
+        # to do: let the engine support nalyze command to show the real-time heat map in GUI like sabaki
+        canonicalBoard = self.g.getCanonicalForm(self.board, color)
+        pi = self.mcts.getActionProb(canonicalBoard, temp=1.0)
+        s = self.g.stringRepresentation(canonicalBoard)
+        winrate = []
+        for a in range(len(pi)):
+            if (s,a) in self.mcts.Qsa:
+                winrate.append(self.mcts.Qsa[(s,a)])
+            else:
+                winrate.append(-1)
+        winrate = (np.array(winrate[:-1]).reshape(self.size, self.size)+1)*50
+        pi = np.array(pi[:-1]).reshape(self.size, self.size)
+        # import matplotlib.pyplot as plt
+        # plt.figure(9,figsize=[12.8, 9.6])
+        # plt.clf()
+        # plt.imshow(pi)
+        # plt.colorbar()
+        # threshold = np.sort(pi.reshape(-1))[-10]
+        # for i in range(g.size):
+        #     for j in range(g.size):
+        #         if pi[i,j]>threshold:
+        #             print(i,j)
+        #             plt.text(j-0.3,i-0.05,str(round(winrate[i,j],1)),fontsize=9,color='w')
+        # plt.savefig("result_pi.png")
+        return pi, winrate
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
