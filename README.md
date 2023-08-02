@@ -33,6 +33,6 @@ The code is tested on a 32 core CPU, 256 GB RAM, and 8 GPU cards machine, with g
 
 On boardsize 9, the game is very likely to end in a draw. On boardsize 15, the agent plays strong black (first to play), but very weak white. Perhaps this can be attributed to the strong advantage for the first player when game is unrestricted, and agent tends to play non-sense move when the game is hopeless. Below is a match between the agent (black) and the author (white).
 
-<a href="https://ibb.co/35X4c0R"><img src="https://i.ibb.co/MyTZ7RB/wechat-20230802102237.png" alt="wechat-20230802102237" border="0" width=60%></a>
+<a href="https://ibb.co/P9JjWGM"><img src="https://i.ibb.co/SdHymwc/wechat-20230802102237.png" alt="wechat-20230802102237" border="0" width=60%></a>
 
 Zhiyuan

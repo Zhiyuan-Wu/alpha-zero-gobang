@@ -304,7 +304,6 @@ class NeuralPlayer():
         # for i in range(g.size):
         #     for j in range(g.size):
         #         if pi[i,j]>threshold:
-        #             print(i,j)
         #             plt.text(j-0.3,i-0.05,str(round(winrate[i,j],1)),fontsize=9,color='w')
         # plt.savefig("result_pi.png")
         return pi, winrate
