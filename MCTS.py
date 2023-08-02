@@ -58,7 +58,7 @@ class MCTS():
         probs = [x / counts_sum for x in counts]
         return probs
 
-    def search(self, canonicalBoard):
+    def search(self, canonicalBoard, root_flag=True):
         """
         This function performs one iteration of MCTS. It is recursively called
         till a leaf node is found. The action chosen at each node is one that
@@ -123,13 +123,17 @@ class MCTS():
         best_act = -1
 
         # pick the action with the highest upper confidence bound
+        _dirichlet_noise = np.random.dirichlet(self.args.dirichlet_alpha * np.ones((self.game.getActionSize())))
         for a in range(self.game.getActionSize()):
             if valids[a]:
+                _Psa = self.Ps[s][a]
+                if root_flag:
+                    _Psa = (1-self.args.dirichlet_weight) * _Psa + self.args.dirichlet_weight * _dirichlet_noise[a]
                 if (s, a) in self.Qsa:
-                    u = self.Qsa[(s, a)] + self.args.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s]) / (
+                    u = self.Qsa[(s, a)] + self.args.cpuct * _Psa * math.sqrt(self.Ns[s]) / (
                             1 + self.Nsa[(s, a)])
                 else:
-                    u = self.args.cpuct * self.Ps[s][a] * math.sqrt(self.Ns[s] + EPS)  # Q = 0 ?
+                    u = self.args.cpuct * _Psa * math.sqrt(self.Ns[s] + EPS)  # Q = 0 ?
 
                 if u > cur_best:
                     cur_best = u
@@ -139,7 +143,7 @@ class MCTS():
         next_s, next_player = self.game.getNextState(canonicalBoard, 1, a)
         next_s = self.game.getCanonicalForm(next_s, next_player)
 
-        v = self.search(next_s)
+        v = self.search(next_s, False)
 
         if (s, a) in self.Qsa:
             self.Qsa[(s, a)] = (self.Nsa[(s, a)] * self.Qsa[(s, a)] + v) / (self.Nsa[(s, a)] + 1)
@@ -198,7 +202,7 @@ class batch_MCTS():
         self.current_state = self.game.getCanonicalForm(self.board, self.player)
         self.current_value = None
     
-    def cpuct(self, s):
+    def cpuct(self, s, root_flag):
         valids = self.Vs[s]
         if s in self.Qsa:
             qsa = self.Qsa[s]
@@ -207,7 +211,11 @@ class batch_MCTS():
             qsa = np.zeros((self.game.getActionSize()))
             nsa = np.zeros((self.game.getActionSize()))
 
-        u = qsa + self.args.cpuct * self.Ps[s] * (np.sqrt(self.Ns[s]) + EPS) / (1+nsa)
+        _Ps = self.Ps[s]
+        if root_flag:
+            # no need to normalize again
+            _Ps = (1-self.args.dirichlet_weight) * _Ps + self.args.dirichlet_weight * np.random.dirichlet(self.args.dirichlet_alpha * np.ones((self.game.getActionSize())))
+        u = qsa + self.args.cpuct * _Ps * (np.sqrt(self.Ns[s]) + EPS) / (1+nsa)
         a = np.argmax((u + 999999)*valids)
         return a
     
@@ -215,6 +223,7 @@ class batch_MCTS():
         ''' excute a forward search, stop at a leaf node (non-evaluated node or terminal-node).
         '''
         self.current_state = self.game.getCanonicalForm(self.board, self.player)
+        root_flag = True
         while 1:
             s = self.game.stringRepresentation(self.current_state)
 
@@ -237,12 +246,13 @@ class batch_MCTS():
             # pick the action with the highest upper confidence bound
             if s not in self.Vs:
                 self.Vs[s] = self.game.getValidMoves(self.current_state, 1)
-            best_act = self.cpuct(s)
+            best_act = self.cpuct(s, root_flag)
 
             next_s, next_player = self.game.getNextState(self.current_state, 1, best_act)
             self.current_state = self.game.getCanonicalForm(next_s, next_player)
 
             self.search_path.append((s, best_act))
+            root_flag = False
 
     def _set_result(self):
         ''' provides a fake function that set all queries from extend() with dummy answers. only for debug purpose.

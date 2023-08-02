@@ -11,6 +11,8 @@ from utils import *
 import os
 from MCTS import MCTS
 import argparse
+import sys
+import select
 
 args = dotdict({
     'game_size': 9, 
@@ -234,6 +236,29 @@ class Engine(object):
             return gtp_vertex(move)
         else:
             raise ValueError("unknown player: {}".format(arguments))
+        
+    def cmd_analyze(self, arguments):
+        c, interval = arguments.split(' ')
+        c = parse_color(c)
+        interval = int(interval)
+        loop_counter = 0
+
+        print("=")
+        while loop_counter<10:
+            counts, winrate = self._game.analyze(c, 200)
+            _m = ""
+            for i in range(len(counts)):
+                if counts[i] == 0:
+                    continue
+                _m += f" info move {gtp_vertex((i//self.size + 1, i%self.size + 1))} visits {counts[i]} winrate {round((winrate[i]+1)/2,6)} pv {gtp_vertex((i//self.size + 1, i%self.size + 1))}"
+            print(_m.strip())
+            try:
+                if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+                    break
+            except:
+                # on windows select do not work, this can not loop on itself. you may re-send anaylyze manually. 
+                loop_counter += 1
+        print("=\n\n")
 
 class NeuralPlayer():
     def __init__(self, size=19, komi=6.5):
@@ -281,32 +306,14 @@ class NeuralPlayer():
         action = np.random.choice(len(pi), p=pi)
         return (action//self.size + 1, action%self.size + 1)
     
-    def analyze(self, color):
-        # analyze game, plot strategy and win rate
-        # to do: let the engine support nalyze command to show the real-time heat map in GUI like sabaki
+    def analyze(self, color, num=1000):
         canonicalBoard = self.g.getCanonicalForm(self.board, color)
-        pi = self.mcts.getActionProb(canonicalBoard, temp=1.0)
+        for _ in range(num):
+            self.mcts.search(canonicalBoard)
         s = self.g.stringRepresentation(canonicalBoard)
-        winrate = []
-        for a in range(len(pi)):
-            if (s,a) in self.mcts.Qsa:
-                winrate.append(self.mcts.Qsa[(s,a)])
-            else:
-                winrate.append(-1)
-        winrate = (np.array(winrate[:-1]).reshape(self.size, self.size)+1)*50
-        pi = np.array(pi[:-1]).reshape(self.size, self.size)
-        # import matplotlib.pyplot as plt
-        # plt.figure(9,figsize=[12.8, 9.6])
-        # plt.clf()
-        # plt.imshow(pi)
-        # plt.colorbar()
-        # threshold = np.sort(pi.reshape(-1))[-10]
-        # for i in range(g.size):
-        #     for j in range(g.size):
-        #         if pi[i,j]>threshold:
-        #             plt.text(j-0.3,i-0.05,str(round(winrate[i,j],1)),fontsize=9,color='w')
-        # plt.savefig("result_pi.png")
-        return pi, winrate
+        counts = [self.mcts.Nsa[(s, a)] if (s, a) in self.mcts.Nsa else 0 for a in range(self.g.getActionSize())]
+        winrate = [self.mcts.Qsa[(s,a)] if (s, a) in self.mcts.Qsa else -1 for a in range(self.g.getActionSize())]
+        return counts, winrate
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()

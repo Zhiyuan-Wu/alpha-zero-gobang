@@ -20,10 +20,12 @@ args = dotdict({
     'episode_size': 100000,                  # Number of samples to simulate during a new iteration.
     'tempThreshold': 30,                     # MCTS result policy tempreture will reduce 0 after this number of game turns
     'updateThreshold': 0.55,                 # During arena playoff, new neural net will be accepted if threshold or more of games are won.
-    'numMCTSSims': 1000,                     # Number of games moves for MCTS to simulate.
+    'numMCTSSims': 1600,                     # Number of games moves for MCTS to simulate.
     'arenaCompare': 40,                      # Number of games to play during arena play to determine if new net will be accepted.
-    'cpuct': 1,                              # Higher value lead to more exploration
+    'cpuct': 3,                              # Higher value lead to more exploration
     'endGameRewardWeight': 1,                # Amplify the real endgame reward over network estimation
+    'dirichlet_alpha': 0.03,                 # Parameter alpha of dirichlet noise
+    'dirichlet_weight': 0.25,                # Parameter epsilon of dirichlet noise
              
     'sampler_num': 12,                       # The number of parallel sampling process.
     'mcts_per_sampler': 64,                  # The number of mcts inside each sampling process, higher value lead to larger query batch
@@ -35,10 +37,10 @@ args = dotdict({
     'port': 47152,                           # localhost port number for pytorch ddp
 
     'checkpoint': './result0729/',           # checkpoint saving directory
-    'load_model': True,                     # load a checkpoint to start
-    'model_series_number': 1690705879,       # the load model series number
-    'numItersForTrainExamplesHistory': 20,   # the maximum iterations that sample buffer keeps
-    'leastTrainingWindow': 5,                # the lowest number of iterations to start training
+    'load_model': True,                      # load a checkpoint to start
+    'model_series_number': 1690971649,       # the load model series number
+    'numItersForTrainExamplesHistory': 25,   # the maximum iterations that sample buffer keeps
+    'leastTrainingWindow': 10,               # the lowest number of iterations to start training
 
     'lr': 0.001,                             # learning rate
     'pi_loss_weight': 1.0,                   # loss function weight for policy term
