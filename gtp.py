@@ -249,8 +249,9 @@ class Engine(object):
         while loop_counter<10:
             counts, winrate, pv = self._game.analyze(c, 300)
             _m = ""
+            counts_sum = sum(counts)
             for i in range(len(counts)):
-                if counts[i] == 0:
+                if counts[i] < 0.02 * counts_sum:
                     continue
                 _m += f" info move {gtp_vertex((i//self.size + 1, i%self.size + 1))} visits {counts[i]} winrate {round((winrate[i]+1)/2,6)} pv {gtp_vertex((i//self.size + 1, i%self.size + 1))}"
                 if len(pv[i])>0:
@@ -308,7 +309,7 @@ class NeuralPlayer():
     def get_move(self, color):
         canonicalBoard = self.g.getCanonicalForm(self.board, color)
         pi = self.mcts.getActionProb(canonicalBoard, temp=0)
-        action = np.random.choice(len(pi), p=pi)
+        action = np.argmax(pi)
         return (action//self.size + 1, action%self.size + 1)
     
     def analyze(self, color, num=1000):

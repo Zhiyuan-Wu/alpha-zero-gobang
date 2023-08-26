@@ -31,8 +31,10 @@ arguments: path/to/gtp.py --game_size 15 --model_path path/to/checkpoint.pth --n
 ### Result
 The code is tested on a 32 core CPU, 256 GB RAM, and 8 GPU cards machine, with gcc 12, python 3.6.8, and pytorch 1.7.1. We provide trained models for boardsize 9 and 15 at [this link](https://pan.baidu.com/s/1-XLuWbVDDEFtIRwK8-dEvA?pwd=1s2g). Checkpoint file name are formatted by boardsize(n), res-block num(b), channel num(c), trained iterations(i), and save date(d).
 
-On boardsize 9, the game is very likely to end in a draw. On boardsize 15, the agent plays strong black (first to play), but very weak white. Perhaps this can be attributed to the strong advantage for the first player when game is unrestricted, and agent tends to play non-sense move when the game is hopeless. Below is a match between the agent (black) and the author (white).
+On boardsize 9, the game is very likely to end in a draw. On boardsize 15, the agent plays good black (first to play), but relatively weak white. Perhaps this can be attributed to the strong advantage for the first player when game is unrestricted, and agent tends to play non-sense move when the game is hopeless. 
 
-<a href="https://ibb.co/P9JjWGM"><img src="https://i.ibb.co/SdHymwc/wechat-20230802102237.png" alt="wechat-20230802102237" border="0" width=60%></a>
+Below is a match between the agent (black, first to play) and another well-known AI [Gomoku Calculator](https://gomocalc.com) (white, second to play). 
+
+<a href="https://ibb.co/8KrHq65"><img src="https://i.ibb.co/yf6rtWy/0826black.png" alt="0826black" border="0" width=60%></a>
 
 Zhiyuan

@@ -35,7 +35,7 @@ class GobangGame():
 
     def getValidMoves(self, board, player):
         # do not allow pass
-        valids = np.zeros((self.getActionSize(),), dtype=np.int32)
+        valids = np.zeros((self.getActionSize(),), dtype=np.int8)
         valids[:-1] = board.reshape([-1]) == 0
         return valids
 
@@ -71,7 +71,7 @@ class GobangGame():
 
     def stringRepresentation(self, board):
         # 8x8 numpy array (canonical board)
-        return board.tostring()
+        return board.tobytes()
 
     @staticmethod
     def display(board):

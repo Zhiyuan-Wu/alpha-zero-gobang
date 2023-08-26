@@ -182,10 +182,8 @@ class batch_MCTS():
         self.current_state = game.getCanonicalForm(self.board, self.player)
         self.current_value = None
 
-        self.search_count = 0
-        self.total_search_depth = 0
-
-        self.ZERO_ACTION_VECTOR = np.zeros((self.game.getActionSize()))
+        self.search_count = 1
+        self.total_search_depth = 1
 
     def reset(self):
         ''' Reset the tree state, ready for new search (under same policy). Note that this will not reset the shared content (Ps, Es, Vs).
@@ -201,6 +199,9 @@ class batch_MCTS():
         self.search_path = []
         self.current_state = self.game.getCanonicalForm(self.board, self.player)
         self.current_value = None
+
+        self.search_count = 1
+        self.total_search_depth = 1
     
     def cpuct(self, s, root_flag):
         valids = self.Vs[s]
@@ -208,8 +209,8 @@ class batch_MCTS():
             qsa = self.Qsa[s]
             nsa = self.Nsa[s]
         else:
-            qsa = np.zeros((self.game.getActionSize()))
-            nsa = np.zeros((self.game.getActionSize()))
+            qsa = np.zeros((self.game.getActionSize()), dtype=np.float16)
+            nsa = np.zeros((self.game.getActionSize()), dtype=np.uint16)
 
         _Ps = self.Ps[s]
         if root_flag:
@@ -294,9 +295,10 @@ class batch_MCTS():
                 self.Qsa[s][a] = (_nsa * _qsa + self.current_value) / (_nsa + 1)
                 self.Nsa[s][a] = _nsa + 1
             else:
-                self.Qsa[s] = np.zeros((self.game.getActionSize(),))
+                self.Qsa[s] = np.zeros((self.game.getActionSize(),), dtype=np.float16)
                 self.Qsa[s][a] = self.current_value
-                self.Nsa[s] = np.zeros((self.game.getActionSize(),))
+                # self.Qsa[s] = np.ones((self.game.getActionSize(),)) * self.current_value
+                self.Nsa[s] = np.zeros((self.game.getActionSize(),), dtype=np.uint16)
                 self.Nsa[s][a] = 1
 
             self.Ns[s] += 1

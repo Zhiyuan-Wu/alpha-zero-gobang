@@ -65,7 +65,7 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
                 if sum_Ps_s > 0:
                     shared_Ps[s] /= sum_Ps_s  # renormalize
                 else:  
-                    log.error("All valid moves were masked, doing a workaround.")
+                    # log.error("All valid moves were masked, doing a workaround.")
                     shared_Ps[s] = shared_Ps[s] + valids
                     shared_Ps[s] /= np.sum(shared_Ps[s])
                 
@@ -80,26 +80,29 @@ def Sampler(identifier, q_job, q_ans, qdata, v_model, game, args, lock):
         for i in range(num_workers):
             mcts = worker_pool[i]
             canonicalBoard = game.getCanonicalForm(mcts.board, mcts.player)
-            temp = int(mcts.episodeStep < args.tempThreshold)
             s = game.stringRepresentation(canonicalBoard)
             counts = mcts.Nsa[s]
 
-            if temp == 0:
-                bestAs = np.array(np.argwhere(counts == np.max(counts))).flatten()
-                bestA = np.random.choice(bestAs)
-                probs = [0] * len(counts)
-                probs[bestA] = 1
-                pi = probs
-            else:
-                counts = counts ** (1. / temp)
+            _counts = np.exp((counts * 1.0 - np.max(counts)) * args.softmax_temp)
+            counts_sum = np.sum(_counts)
+            pi_lable = [x / counts_sum for x in _counts]
+
+            if mcts.episodeStep < args.tempThreshold:
                 counts_sum = np.sum(counts)
-                pi = [x / counts_sum for x in counts]
-            sym = game.getSymmetries(canonicalBoard, pi)
+                pi_rollout = [x / counts_sum for x in counts]
+            else:
+                pi_rollout = pi_lable
+                
+            sym = game.getSymmetries(canonicalBoard, pi_lable)
             mcts.game_record += [(b, p, mcts.player) for b, p in sym]
 
-            action = np.random.choice(len(pi), p=pi)
+            action = np.random.choice(len(pi_rollout), p=pi_rollout)
             mcts.board, mcts.player = game.getNextState(mcts.board, mcts.player, action)
             mcts.episodeStep += 1
+            if not args.keep_mcts_after_move:
+                mcts.Nsa.clear()
+                mcts.Qsa.clear()
+                mcts.Ns.clear()
 
             r = game.getGameEnded(mcts.board, mcts.player)
             if r != 0:
@@ -161,7 +164,7 @@ def Evaluator(sampler_pool, v_model, gpu_id, game,args):
                 board = board.contiguous().cuda(gpu_id)
                 with torch.no_grad():
                     pi, v = model(board)
-                pi = torch.exp(pi).data.cpu().numpy().squeeze()
+                pi = torch.exp(pi).data.cpu().numpy().squeeze().astype(np.float16)
                 v = torch.softmax(v, -1).data.cpu().numpy().squeeze()
                 ans = (pi, v)
                 q_ans.put(ans)
@@ -325,6 +328,8 @@ def Arena(v_model_sample, v_model_train, gpu_id, game, args, lock):
                         break
                 t_status.update(1)
                 t_status.set_postfix(r=f'{str(v_model_sample.value)} vs {str(last_model)}={score_pad[0]}:{score_pad[1]}:{score_pad[2]}')
+                if (score_pad[1]+score_pad[2]) / args.arenaCompare > args.updateThreshold or (score_pad[0]+score_pad[2]) / args.arenaCompare > args.updateThreshold:
+                    break
             
             current_win_rate = (score_pad[1]+score_pad[2]) / args.arenaCompare
             if current_win_rate > args.updateThreshold:
