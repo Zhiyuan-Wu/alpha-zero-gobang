@@ -26,7 +26,11 @@ args = dotdict({
     'numMCTSSims': 1000,
     'cpuct': 1,
     'endGameRewardWeight': 1,
-    'gtp_largest_analyze_length': 5,
+    'gtp_largest_analyze_length': 10,
+    'dirichlet_alpha': 0.03,                 # Parameter alpha of dirichlet noise
+    'dirichlet_weight': 0.3,                 # Parameter epsilon of dirichlet noise
+    'softmax_temp': 1.0,
+    'keep_mcts_after_move': True,
 })
 
 def pre_engine(s):
@@ -344,9 +348,9 @@ if __name__=="__main__":
     parser.add_argument('--game_size', type=int, default=15, help='board size')
     parser.add_argument('--numMCTSSims', type=int, default=1000, help='the number of random search for each move')
     a = parser.parse_args()
-    args["model_path"] = a.model_path
-    args["game_size"] = a.game_size
-    args["numMCTSSims"] = a.numMCTSSims
+    args.__setattr__("model_path", a.model_path)
+    args.__setattr__("game_size", a.game_size)
+    args.__setattr__("numMCTSSims", a.numMCTSSims)
 
     g = NeuralPlayer(args.game_size)
     e = Engine(g)
