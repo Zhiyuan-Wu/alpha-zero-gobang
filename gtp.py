@@ -276,15 +276,19 @@ class NeuralPlayer():
         self.komi = komi
         self.board = np.zeros((size, size), dtype=np.int8)
         self.g = Game(size)
-        self.nnet = onnet(self.g, args)
         _path = args.model_path
+        state_dict = torch.load(_path, map_location=map_location)
+        consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+        _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
+        _num_channels = state_dict['conv1.bias'].shape[0]
+        args.__setattr__("block_num", _block_num)
+        args.__setattr__("num_channels", _num_channels)
+        self.nnet = onnet(self.g, args)
         if args.cuda:
             map_location = 'cuda:0'
             self.nnet.cuda(0)
         else:
             map_location = 'cpu'
-        state_dict = torch.load(_path, map_location=map_location)
-        consume_prefix_in_state_dict_if_present(state_dict, 'module.')
         self.nnet.load_state_dict(state_dict)
         self.mcts = MCTS(self.g, self.nnet, args)
 

@@ -18,7 +18,7 @@ args = dotdict({
     'game_size': 15,                         # Board size
     'numIters': 100,                         # Not used
     'episode_size': 100000,                  # Number of samples to simulate during a new iteration.
-    'tempThreshold': 5,                      # MCTS result policy tempreture will reduce 0 after this number of game turns
+    'tempThreshold': 10,                     # MCTS result policy tempreture will reduce 0 after this number of game turns
     'updateThreshold': 0.55,                 # During arena playoff, new neural net will be accepted if threshold or more of games are won.
     'numMCTSSims': 1600,                     # Number of games moves for MCTS to simulate.
     'arenaCompare': 40,                      # Number of games to play during arena play to determine if new net will be accepted.
@@ -29,7 +29,7 @@ args = dotdict({
     'softmax_temp': 1.0,
     'keep_mcts_after_move': False,
              
-    'sampler_num': 24,                       # The number of parallel sampling process.
+    'sampler_num': 32,                       # The number of parallel sampling process.
     'mcts_per_sampler': 64,                  # The number of mcts inside each sampling process, higher value lead to larger query batch
     'gpu_evaluator': [4,5,6,7],              # The GPU used as evaluator
     'gpu_trainner':  [0,1,2],                # The GPU used as trainner
@@ -39,8 +39,8 @@ args = dotdict({
     'port': 47152,                           # localhost port number for pytorch ddp
 
     'checkpoint': './result0816/',           # checkpoint saving directory
-    'load_model': False,                      # load a checkpoint to start
-    'model_series_number': 1692069737,       # the load model series number
+    'load_model': True,                      # load a checkpoint to start
+    'model_series_number': 1694580504,       # the load model series number
     'numItersForTrainExamplesHistory': 30,   # the maximum iterations that sample buffer keeps
     'leastTrainingWindow': 0,                # the lowest number of iterations to start training
 
@@ -51,7 +51,7 @@ args = dotdict({
     'batch_size': 512,                       # trainning batchsize
     'cuda': torch.cuda.is_available(),       # if cuda avaliable. Note: not tested when cuda not avaliable
     'num_channels': 128,                     # neural network feature channel number
-    'block_num': 6,                          # neural network residual convolution block number
+    'block_num': 9,                          # neural network residual convolution block number
 })
 
 

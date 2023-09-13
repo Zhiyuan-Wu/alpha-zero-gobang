@@ -14,6 +14,8 @@ class GobangNNet(nn.Module):
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
         self.args = args
+        self.block_num = args.block_num
+        self.num_channels = args.num_channels
 
         super(GobangNNet, self).__init__()
         self.conv1 = nn.Conv2d(1, args.num_channels, 5, stride=1, padding=2)
@@ -38,14 +40,14 @@ class GobangNNet(nn.Module):
         s = s.view(-1, 1, self.board_x, self.board_y)
         s = self.conv1(s)
 
-        for i in range(self.args.block_num):
+        for i in range(self.block_num):
             _s = F.relu(self.bn_layers[2*i](s))
             _s = self.conv_layers[2*i](_s)
             _s = F.relu(self.bn_layers[2*i+1](_s))
             _s = self.conv_layers[2*i+1](_s)
             s = _s + s
 
-        s = s.view(-1, self.args.num_channels*(self.board_x)*(self.board_y))
+        s = s.view(-1, self.num_channels*(self.board_x)*(self.board_y))
 
         s = F.dropout(F.relu(self.fc_bn1(self.fc1(s))), p=self.args.dropout, training=self.training)  # batch_size x 1024
         s = F.dropout(F.relu(self.fc_bn2(self.fc2(s))), p=self.args.dropout, training=self.training)  # batch_size x 512

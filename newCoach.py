@@ -150,6 +150,15 @@ def Evaluator(sampler_pool, v_model, gpu_id, game,args):
             _path = os.path.join(args.checkpoint, f"checkpoint_{model_version}.pth")
             state_dict = torch.load(_path, map_location=map_location)
             consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+            _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
+            _num_channels = state_dict['conv1.bias'].shape[0]
+            if _block_num != len(model.conv_layers)//2 or _num_channels != model.conv1.bias.shape[0]:
+                del model
+                args.__setattr__("block_num", _block_num)
+                args.__setattr__("num_channels", _num_channels)
+                model = onnet(game, args)
+                model.cuda(gpu_id)
+                model.eval()
             model.load_state_dict(state_dict)
             log.debug(f"Evaluator: pull new model {model_version}")
 
@@ -184,7 +193,12 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
     if v_model.value > 0:
         map_location = f'cuda:{rank}'
         _path = os.path.join(args.checkpoint, f"checkpoint_{v_model.value}.pth")
-        ddp_model.load_state_dict(torch.load(_path, map_location=map_location))
+        state_dict = torch.load(_path, map_location=map_location)
+        _block_num = len([0 for x in state_dict.keys() if x.startswith('module.conv_layers')]) // 4
+        _num_channels = state_dict['module.conv1.bias'].shape[0]
+        # Trainer will ignore pretrain model if its size mismatch current configuration
+        if _block_num == len(model.conv_layers)//2 and _num_channels == model.conv1.bias.shape[0]:
+            ddp_model.load_state_dict(state_dict)
 
     optimizer = optim.Adam(ddp_model.parameters(), lr=args.lr)
     ddp_model.train()
@@ -245,7 +259,7 @@ def mpTrainer(rank, world_size, v_model, q_distributor, game, args, lock):
                     v_losses.update(l_v.item(), boards.size(0))
                     pi_entropy.update(l_e.item(), boards.size(0))
                     if rank==0:
-                        t_train.set_postfix(L_pi=pi_losses, L_v=v_losses, E_pi=pi_entropy)
+                        t_train.set_postfix(L_pi=pi_losses, L_v=v_losses)
 
                     # compute gradient and do SGD step
                     optimizer.zero_grad()
@@ -284,6 +298,15 @@ def Arena(v_model_sample, v_model_train, gpu_id, game, args, lock):
         _path = os.path.join(args.checkpoint, f"checkpoint_{v_model_sample.value}.pth")
         state_dict = torch.load(_path, map_location=map_location)
         consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+        _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
+        _num_channels = state_dict['conv1.bias'].shape[0]
+        if _block_num != len(model_best.conv_layers)//2 or _num_channels != model_best.conv1.bias.shape[0]:
+            del model_best
+            args.__setattr__("block_num", _block_num)
+            args.__setattr__("num_channels", _num_channels)
+            model_best = onnet(game, args)
+            model_best.cuda(gpu_id)
+            model_best.eval()
         model_best.load_state_dict(state_dict)
 
     if v_model_train.value > 0:
@@ -291,6 +314,15 @@ def Arena(v_model_sample, v_model_train, gpu_id, game, args, lock):
         _path = os.path.join(args.checkpoint, f"checkpoint_{v_model_train.value}.pth")
         state_dict = torch.load(_path, map_location=map_location)
         consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+        _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
+        _num_channels = state_dict['conv1.bias'].shape[0]
+        if _block_num != len(model_current.conv_layers)//2 or _num_channels != model_current.conv1.bias.shape[0]:
+            del model_current
+            args.__setattr__("block_num", _block_num)
+            args.__setattr__("num_channels", _num_channels)
+            model_current = onnet(game, args)
+            model_current.cuda(gpu_id)
+            model_current.eval()
         model_current.load_state_dict(state_dict)
 
     last_model = v_model_train.value
@@ -304,6 +336,15 @@ def Arena(v_model_sample, v_model_train, gpu_id, game, args, lock):
             _path = os.path.join(args.checkpoint, f"checkpoint_{v_model_train.value}.pth")
             state_dict = torch.load(_path, map_location=map_location)
             consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+            _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
+            _num_channels = state_dict['conv1.bias'].shape[0]
+            if _block_num != len(model_current.conv_layers)//2 or _num_channels != model_current.conv1.bias.shape[0]:
+                del model_current
+                args.__setattr__("block_num", _block_num)
+                args.__setattr__("num_channels", _num_channels)
+                model_current = onnet(game, args)
+                model_current.cuda(gpu_id)
+                model_current.eval()
             model_current.load_state_dict(state_dict)
             last_model = v_model_train.value
             t_status.reset(total=args.arenaCompare)
@@ -328,15 +369,24 @@ def Arena(v_model_sample, v_model_train, gpu_id, game, args, lock):
                         break
                 t_status.update(1)
                 t_status.set_postfix(r=f'{str(v_model_sample.value)} vs {str(last_model)}={score_pad[0]}:{score_pad[1]}:{score_pad[2]}')
-                if (score_pad[1]+score_pad[2]) / args.arenaCompare > args.updateThreshold or (score_pad[0]+score_pad[2]) / args.arenaCompare > args.updateThreshold:
+                if (score_pad[1]+score_pad[2]/2) / args.arenaCompare > args.updateThreshold or (score_pad[0]+score_pad[2]/2) / args.arenaCompare > 1 - args.updateThreshold:
                     break
             
-            current_win_rate = (score_pad[1]+score_pad[2]) / args.arenaCompare
+            current_win_rate = (score_pad[1]+score_pad[2]/2) / args.arenaCompare
             if current_win_rate > args.updateThreshold:
                 map_location = f'cuda:{gpu_id}'
                 _path = os.path.join(args.checkpoint, f"checkpoint_{last_model}.pth")
                 state_dict = torch.load(_path, map_location=map_location)
                 consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+                _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
+                _num_channels = state_dict['conv1.bias'].shape[0]
+                if _block_num != len(model_best.conv_layers)//2 or _num_channels != model_best.conv1.bias.shape[0]:
+                    del model_best
+                    args.__setattr__("block_num", _block_num)
+                    args.__setattr__("num_channels", _num_channels)
+                    model_best = onnet(game, args)
+                    model_best.cuda(gpu_id)
+                    model_best.eval()
                 model_best.load_state_dict(state_dict)
                 v_model_sample.value = last_model
         
