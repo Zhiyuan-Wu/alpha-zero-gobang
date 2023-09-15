@@ -43,6 +43,25 @@ class GobangGame():
         # return 0 if not ended, 1 if player 1 won, -1 if player 1 lost
         # player = 1
 
+        # n = self.n_in_row
+        # for w in range(self.n):
+        #     for h in range(self.n):
+        #         if (w in range(self.n - n + 1) and board[w][h] != 0 and
+        #                 len(set(board[i][h] for i in range(w, w + n))) == 1):
+        #             return board[w][h]
+        #         if (h in range(self.n - n + 1) and board[w][h] != 0 and
+        #                 len(set(board[w][j] for j in range(h, h + n))) == 1):
+        #             return board[w][h]
+        #         if (w in range(self.n - n + 1) and h in range(self.n - n + 1) and board[w][h] != 0 and
+        #                 len(set(board[w + k][h + k] for k in range(n))) == 1):
+        #             return board[w][h]
+        #         if (w in range(self.n - n + 1) and h in range(n - 1, self.n) and board[w][h] != 0 and
+        #                 len(set(board[w + l][h - l] for l in range(n))) == 1):
+        #             return board[w][h]
+        # if np.all(board!=0):
+        #     return 0
+        # return 1e-4
+
         return cgetGameEnded(board.astype(np.int32))
 
     def getCanonicalForm(self, board, player):
