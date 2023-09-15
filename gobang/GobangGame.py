@@ -58,7 +58,7 @@ class GobangGame():
         #         if (w in range(self.n - n + 1) and h in range(n - 1, self.n) and board[w][h] != 0 and
         #                 len(set(board[w + l][h - l] for l in range(n))) == 1):
         #             return board[w][h]
-        # if np.all(board!=0):
+        # if np.any(board==0):
         #     return 0
         # return 1e-4
 
