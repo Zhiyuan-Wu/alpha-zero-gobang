@@ -14,6 +14,11 @@ import argparse
 import sys
 import select
 
+import grpc
+from concurrent import futures
+import gtp_pb2
+import gtp_pb2_grpc
+
 args = dotdict({
     'game_size': 9, 
     'lr': 0.001,
@@ -271,7 +276,7 @@ class Engine(object):
         print("=\n\n")
 
 class NeuralPlayer():
-    def __init__(self, size=19, komi=6.5):
+    def __init__(self, size=19, komi=6.5, server_stub=None):
         self.size = size
         self.komi = komi
         self.board = np.zeros((size, size), dtype=np.int8)
@@ -291,6 +296,7 @@ class NeuralPlayer():
         self.nnet = onnet(self.g, args)
         self.nnet.load_state_dict(state_dict)
         self.mcts = MCTS(self.g, self.nnet, args)
+        self.server_stub = server_stub
 
     def clear(self):
         self.board = np.zeros((self.size, self.size), dtype=np.int8)
@@ -316,8 +322,11 @@ class NeuralPlayer():
 
     def get_move(self, color):
         canonicalBoard = self.g.getCanonicalForm(self.board, color)
-        pi = self.mcts.getActionProb(canonicalBoard, temp=0)
-        action = np.argmax(pi)
+        if self.server_stub is None:
+            pi = self.mcts.getActionProb(canonicalBoard, temp=0)
+            action = np.argmax(pi)
+        else:
+            action = self.server_stub.GetMove(canonicalBoard.tobytes()).action
         return (action//self.size + 1, action%self.size + 1)
     
     def analyze(self, color, num=1000):
@@ -346,20 +355,45 @@ class NeuralPlayer():
             pv.append(_pv)
         return counts, winrate, pv
 
+class GTPServerServicer(gtp_pb2_grpc.GTPServerServicer):
+    def __init__(self, neural_player):
+        self.neural_player = neural_player
+
+    def GetMove(self, request, context):
+        canonicalBoard = np.frombuffer(request.data, dtype=np.int8).reshape([self.neural_player.size]*2)
+        pi = self.mcts.getActionProb(canonicalBoard, temp=0)
+        action = np.argmax(pi)
+        return gtp_pb2.Action(action=action)
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, default=None, help='path to the neural network checkpoint')
     parser.add_argument('--game_size', type=int, default=15, help='board size')
     parser.add_argument('--numMCTSSims', type=int, default=1000, help='the number of random search for each move')
+    parser.add_argument('--server', type=str, default=None, help='server address to host service')
+    parser.add_argument('--client', type=str, default=None, help='server address to query')
     a = parser.parse_args()
     args.__setattr__("model_path", a.model_path)
     args.__setattr__("game_size", a.game_size)
     args.__setattr__("numMCTSSims", a.numMCTSSims)
 
-    g = NeuralPlayer(args.game_size)
-    e = Engine(g)
-    print("GTP engine Ready.")
-    while 1:
-        x = input().strip()
-        r = e.send(x)
-        print(r)
+    if a.server is not None:
+        g = NeuralPlayer(args.game_size)
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        gtp_pb2_grpc.add_GTPServerServicer_to_server(GTPServerServicer(), server)
+        server.add_insecure_port(a.server)
+        server.start()
+        server.wait_for_termination()
+    else:
+        if a.client is not None:
+            channel = grpc.insecure_channel(a.client)
+            stub = gtp_pb2_grpc.GTPServerStub(channel)
+            g = NeuralPlayer(args.game_size, server_stub=stub)
+        else:
+            g = NeuralPlayer(args.game_size)
+        e = Engine(g)
+        print("GTP engine Ready.")
+        while 1:
+            x = input().strip()
+            r = e.send(x)
+            print(r)

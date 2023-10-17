@@ -406,6 +406,7 @@ def Controller(q_data, trainer_pool, v_model_sample, v_model_train, game, args, 
     data_counter = 0
     old_model = v_model_train.value
     iteration_counter = 0
+    duplicated_data_ratio = -1
     start_time = time.time()
     
     while 1:
@@ -420,7 +421,7 @@ def Controller(q_data, trainer_pool, v_model_sample, v_model_train, game, args, 
                 # Distribute data to trainers
                 if len(sample_buffer) > args.episode_size:
                     data_counter += len(sample_buffer)
-                    shuffle(sample_buffer)
+                    duplicated_data_ratio = len(sample_buffer) / len(set([x[0].tobytes() for x in sample_buffer]))
                     split_size = len(sample_buffer) // len(args.gpu_trainner)
                     for i in range(len(args.gpu_trainner)):
                         trainer_pool[i].put(sample_buffer[split_size*i:split_size*(i+1)])
@@ -432,7 +433,12 @@ def Controller(q_data, trainer_pool, v_model_sample, v_model_train, game, args, 
             iteration_counter += 1
             t_status.update(1)
 
-        t_status.set_postfix(iter=iteration_counter, best=str(v_model_sample.value % 1000), cur=str(v_model_train.value % 1000), d=f"{data_counter//1000000}M", s=f"{data_counter/(time.time()-start_time)*60/1000 : .1f}k/min")
+        t_status.set_postfix(i=iteration_counter, 
+                             b=str(v_model_sample.value % 1000), 
+                             c=str(v_model_train.value % 1000), 
+                             r=duplicated_data_ratio,
+                             d=f"{data_counter//1000000}M", 
+                             s=f"{data_counter/(time.time()-start_time)*60/1000 : .1f}k/min")
         time.sleep(0.1)
 
 class mpCoach():

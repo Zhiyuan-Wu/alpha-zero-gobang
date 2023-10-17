@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+service GTPServer {
+    rpc getActionProb(Board) returns (Action) {}
+}
+
+message Board {
+    string board = 1;
+}
+
+message Action {
+    int32 action = 1;
+}
