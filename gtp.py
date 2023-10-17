@@ -281,20 +281,22 @@ class NeuralPlayer():
         self.komi = komi
         self.board = np.zeros((size, size), dtype=np.int8)
         self.g = Game(size)
-        _path = args.model_path
-        if args.cuda:
-            map_location = 'cuda:0'
-            self.nnet.cuda(0)
-        else:
-            map_location = 'cpu'
-        state_dict = torch.load(_path, map_location=map_location)
-        consume_prefix_in_state_dict_if_present(state_dict, 'module.')
-        _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
-        _num_channels = state_dict['conv1.bias'].shape[0]
-        args.__setattr__("block_num", _block_num)
-        args.__setattr__("num_channels", _num_channels)
-        self.nnet = onnet(self.g, args)
-        self.nnet.load_state_dict(state_dict)
+        if server_stub is None:
+            _path = args.model_path
+            if args.cuda:
+                map_location = 'cuda:0'
+            else:
+                map_location = 'cpu'
+            state_dict = torch.load(_path, map_location=map_location)
+            consume_prefix_in_state_dict_if_present(state_dict, 'module.')
+            _block_num = len([0 for x in state_dict.keys() if x.startswith('conv_layers')]) // 4
+            _num_channels = state_dict['conv1.bias'].shape[0]
+            args.__setattr__("block_num", _block_num)
+            args.__setattr__("num_channels", _num_channels)
+            self.nnet = onnet(self.g, args)
+            if args.cuda:
+                self.nnet.cuda(0)
+            self.nnet.load_state_dict(state_dict)
         self.mcts = MCTS(self.g, self.nnet, args)
         self.server_stub = server_stub
 
@@ -326,7 +328,7 @@ class NeuralPlayer():
             pi = self.mcts.getActionProb(canonicalBoard, temp=0)
             action = np.argmax(pi)
         else:
-            action = self.server_stub.GetMove(canonicalBoard.tobytes()).action
+            action = self.server_stub.getActionProb(gtp_pb2.Board(board=canonicalBoard.tobytes())).action
         return (action//self.size + 1, action%self.size + 1)
     
     def analyze(self, color, num=1000):
@@ -359,9 +361,9 @@ class GTPServerServicer(gtp_pb2_grpc.GTPServerServicer):
     def __init__(self, neural_player):
         self.neural_player = neural_player
 
-    def GetMove(self, request, context):
-        canonicalBoard = np.frombuffer(request.data, dtype=np.int8).reshape([self.neural_player.size]*2)
-        pi = self.mcts.getActionProb(canonicalBoard, temp=0)
+    def getActionProb(self, request, context):
+        canonicalBoard = np.frombuffer(request.board, dtype=np.int8).reshape([self.neural_player.size]*2)
+        pi = self.neural_player.mcts.getActionProb(canonicalBoard, temp=0)
         action = np.argmax(pi)
         return gtp_pb2.Action(action=action)
 
@@ -380,7 +382,7 @@ if __name__=="__main__":
     if a.server is not None:
         g = NeuralPlayer(args.game_size)
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-        gtp_pb2_grpc.add_GTPServerServicer_to_server(GTPServerServicer(), server)
+        gtp_pb2_grpc.add_GTPServerServicer_to_server(GTPServerServicer(g), server)
         server.add_insecure_port(a.server)
         server.start()
         server.wait_for_termination()

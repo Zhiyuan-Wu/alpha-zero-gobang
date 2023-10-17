@@ -5,7 +5,7 @@ service GTPServer {
 }
 
 message Board {
-    string board = 1;
+    bytes board = 1;
 }
 
 message Action {
