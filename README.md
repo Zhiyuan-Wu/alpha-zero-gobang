@@ -19,6 +19,7 @@ To train the model, first config parameters in `main.py`, then:
 cd cfun
 python setup.py build_ext --inplace
 cd ..
+python -m grpc_tools.protoc -I . --python_out=. --grpc_python_out=. gtp.proto
 python main.py
 ```
 
